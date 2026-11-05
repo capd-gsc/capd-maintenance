@@ -98,7 +98,7 @@ function planList() {
 /* =================== LOGIN =================== */
 function renderLogin(step = 'email', email = '') {
   $('#app').innerHTML = `<div class="login"><div class="login-card">
-    <div class="brand" style="color:var(--bar)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
+    <div class="brand" style="color:var(--link)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
     <h1>เข้าสู่ระบบด้วยอีเมลบริษัท</h1>
     ${step === 'email' ? `
       <p class="sub" style="margin:0">ระบบจะส่งลิงก์/รหัสเข้าสู่ระบบไปที่อีเมล @${esc(C.ALLOWED_DOMAIN)} ของคุณ</p>
