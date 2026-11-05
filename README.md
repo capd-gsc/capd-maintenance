@@ -1,0 +1,97 @@
+# CAPD Maintenance (GSC · SCGC)
+
+เว็บแอประบบแจ้งซ่อมของแผนก CAPD มีฟังก์ชันดังนี้
+- แจ้งซ่อม อนุมัติ และเดินงานซ่อม (รออนุมัติ → รอรับงาน → กำลังซ่อม → รออะไหล่ → ทดสอบ → รอผู้แจ้งยืนยัน → ปิดงาน)
+- ทะเบียนเครื่องจักร และแผน PM / CAL
+- คลังเอกสาร
+- รายงาน และ Export Excel
+
+ใช้เทคโนโลยีดังนี้
+- หน้าเว็บเป็นไฟล์ HTML/JS ล้วน ไม่ต้อง build
+- ฐานข้อมูล Login และไฟล์ ใช้ **Supabase**
+- โฮสต์หน้าเว็บด้วย **GitHub Pages** (หรือ Netlify / Vercel)
+
+```
+index.html          หน้าเว็บ
+css/style.css       หน้าตา
+js/config.js        ← ใส่ค่า Supabase ตรงนี้
+js/app.js           โค้ดหลัก
+supabase/schema.sql ← รันใน Supabase SQL Editor ครั้งเดียว
+```
+
+---
+
+## ขั้นที่ 1: สร้าง Supabase Project
+1. สมัครหรือ Login ที่ https://supabase.com แล้วกด **New project**
+   - Region: แนะนำ **Southeast Asia (Singapore)**
+   - ตั้ง Database password แล้วเก็บไว้ให้ดี
+2. ไปที่ **SQL Editor → New query** แล้ววางเนื้อหาไฟล์ `supabase/schema.sql` ทั้งไฟล์ จากนั้นกด **Run**
+   - ระบบจะสร้างตาราง สิทธิ์ (Row Level Security) และที่เก็บไฟล์ให้ครบ
+   - ถ้าต้องการกำหนดบทบาทล่วงหน้า ให้แก้รายชื่อในตาราง `role_presets` ในไฟล์ก่อนรัน (ตอนนี้มี user01 = admin, user08 = approver, user14 และ user21 = tech)
+3. ไปที่ **Project Settings → API** แล้วคัดลอกค่า 2 ค่า
+   - `Project URL`
+   - `anon public` key
+4. เปิดไฟล์ `js/config.js` แล้วใส่ค่าทั้งสองลงไป
+
+## ขั้นที่ 2: ตั้งค่า Login ด้วยอีเมลบริษัท (รหัส OTP 6 หลัก)
+ระบบใช้วิธีส่ง**รหัส 6 หลัก**ไปที่อีเมล @scg.com แทนการส่งลิงก์
+เหตุผลคือระบบสแกนลิงก์ในอีเมลของบริษัทมักกดลิงก์ให้อัตโนมัติ ทำให้ลิงก์ใช้ไม่ได้
+
+1. ไปที่ **Authentication → Sign In / Providers → Email** แล้วเปิด Email provider
+   - แนะนำให้ปิด *Confirm email* เพราะรหัส OTP ยืนยันอีเมลอยู่แล้ว
+2. ไปที่ **Authentication → Email Templates → Magic Link** แล้วเปลี่ยนเนื้อหาเป็น
+   ```html
+   <h2>รหัสเข้าสู่ระบบ CAPD Maintenance</h2>
+   <p>รหัสของคุณคือ <b style="font-size:24px">{{ .Token }}</b></p>
+   <p>รหัสนี้ใช้ได้ 1 ชั่วโมง</p>
+   ```
+3. **สำคัญ:** อีเมลในตัวของ Supabase ส่งได้เพียงไม่กี่ฉบับต่อชั่วโมง ถ้ามีผู้ใช้ประมาณ 50 คน ต้องตั้ง **Custom SMTP**
+   - ตั้งที่ **Project Settings → Authentication → SMTP Settings**
+   - ใช้ผู้ให้บริการอย่าง Resend, Brevo หรือ SendGrid ก็ได้ หรือขอ SMTP relay จาก IT
+4. ไปที่ **Authentication → URL Configuration** แล้วใส่ Site URL เป็นที่อยู่เว็บจริง เช่น `https://<user>.github.io/capd-maintenance/`
+
+ระบบรับเฉพาะอีเมล @scg.com และบล็อกไว้ 2 ชั้น
+- ชั้นแรกที่หน้าเว็บ
+- ชั้นที่สองที่ฐานข้อมูล ผ่าน trigger `enforce_company_domain` ทำให้แม้ส่งคำขอตรงไปที่ Supabase ก็สมัครด้วยอีเมลอื่นไม่ได้
+
+**ทางเลือกในอนาคต:** ถ้า IT ทำ App Registration ใน Microsoft Entra ID ให้
+1. เปิด Azure provider ใน Supabase
+2. ตั้ง `ENABLE_MICROSOFT_LOGIN: true` ใน `config.js`
+
+หลังจากนั้นจะมีปุ่ม "Sign in with Microsoft" แบบ SSO
+
+## ขั้นที่ 3: เปิดเว็บด้วย GitHub Pages
+1. Push โค้ดขึ้น GitHub repo
+2. ไปที่ repo → **Settings → Pages** แล้วตั้ง Source เป็น `Deploy from a branch` เลือก `main` และ `/ (root)`
+3. รอประมาณ 1 นาที แล้วเปิดเว็บที่ `https://<user>.github.io/<repo>/`
+
+> GitHub Pages ของ repo แบบ **private** ต้องใช้แพ็กเกจเสียเงิน ถ้าใช้ GitHub ฟรีให้เลือกทางใดทางหนึ่ง
+> - ตั้ง repo เป็น public ได้ เพราะโค้ดไม่มีข้อมูลลับ ข้อมูลจริงอยู่ใน Supabase และต้อง Login ก่อนเห็น
+> - หรือใช้ Netlify / Vercel แทน ซึ่งเชื่อม private repo ได้ฟรี
+
+## ขั้นที่ 4: นำเข้าข้อมูลเครื่องจักร
+1. Login ด้วยบัญชี Admin
+2. ไปที่เมนู **เครื่องจักร → นำเข้าจาก Excel** แล้วเลือกไฟล์ `DATA.xlsx`
+3. ระบบอ่านชีท `Machine Master`, `PM Master` และ `CAL Master` ตามหัวคอลัมน์ในไฟล์เดิม
+   - กดนำเข้าซ้ำได้ ระบบจะอัปเดตตาม Machine number
+
+## บทบาทและสิทธิ์
+| บทบาท | ทำอะไรได้ |
+|---|---|
+| ผู้แจ้ง | แจ้งซ่อม ดูงานทั้งหมด และยืนยันหรือตีกลับงานที่ตัวเองแจ้ง |
+| ช่าง | รับงานที่ได้รับมอบหมาย อัปเดตสถานะ และบันทึกผลซ่อม |
+| หัวหน้างาน / ผู้อนุมัติ | อนุมัติหรือไม่อนุมัติ มอบหมายช่าง และจัดการเอกสาร (รวมเอกสารจำกัดสิทธิ์) |
+| Admin | ทำได้ทุกอย่าง รวมถึงจัดการเครื่องจักร ผู้ใช้ และบทบาท |
+
+- ผู้ใช้ใหม่ที่ Login ครั้งแรกจะได้บทบาท "ผู้แจ้ง" โดยอัตโนมัติ ยกเว้นคนที่กำหนดบทบาทไว้ล่วงหน้า
+- Admin เปลี่ยนบทบาทได้ที่เมนู **ผู้ใช้**
+- สิทธิ์ทั้งหมดบังคับที่ระดับฐานข้อมูล (RLS + trigger) แม้มีคนแก้โค้ดหน้าเว็บก็ข้ามสิทธิ์ไม่ได้
+
+## สิ่งที่ยังไม่มีในเวอร์ชันนี้
+- แจ้งเตือนทางอีเมลหรือ Teams เมื่อมีงานใหม่ หรือ PM ใกล้ครบกำหนด (ทำต่อได้ด้วย Supabase Edge Function หรือ Database Webhook)
+- Checklist ของงาน PM และลายเซ็นตรวจรับ
+- เงื่อนไขอนุมัติตามวงเงิน หรืออนุมัติ 2 ขั้น
+
+## ข้อควรทราบเรื่องข้อมูล
+ข้อมูลจะถูกเก็บบน Cloud ของ Supabase ไม่ได้อยู่ในระบบของ SCG
+ก่อนใช้งานจริงควรสอบถาม IT / Data Governance ว่าข้อมูลประเภทนี้เก็บบน Cloud ภายนอกได้หรือไม่
