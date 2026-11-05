@@ -5,6 +5,9 @@ window.APP_CONFIG = {
   SUPABASE_URL: 'https://dymnbigvcbthxumrijsb.supabase.co',
   SUPABASE_ANON_KEY: 'sb_publishable_8UUUlNDvS7-3PB88i0D0vg_nOvhhjJ9',
   ALLOWED_DOMAIN: 'scg.com',
+  // โหมดทดลอง: true = พิมพ์อีเมล @scg.com แล้วเข้าได้ทันที ไม่ส่งอีเมลยืนยัน (ไม่ปลอดภัย ใช้ทดลองเท่านั้น)
+  //            false = ส่งรหัส/ลิงก์ยืนยันทางอีเมล (ต้องตั้ง SMTP)
+  TRIAL_EMAIL_ONLY: true,
   // เปิดปุ่ม "Sign in with Microsoft" เมื่อ IT ทำ App Registration ให้แล้ว (ดู README)
   ENABLE_MICROSOFT_LOGIN: false,
   APP_NAME: 'CAPD Maintenance',

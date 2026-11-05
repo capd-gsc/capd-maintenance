@@ -101,10 +101,11 @@ function renderLogin(step = 'email', email = '') {
     <div class="brand" style="color:var(--link)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
     <h1>เข้าสู่ระบบด้วยอีเมลบริษัท</h1>
     ${step === 'email' ? `
-      <p class="sub" style="margin:0">ระบบจะส่งลิงก์/รหัสเข้าสู่ระบบไปที่อีเมล @${esc(C.ALLOWED_DOMAIN)} ของคุณ</p>
+      <p class="sub" style="margin:0">${C.TRIAL_EMAIL_ONLY ? 'กรอกอีเมล @' + esc(C.ALLOWED_DOMAIN) + ' ของคุณ' : 'ระบบจะส่งลิงก์/รหัสเข้าสู่ระบบไปที่อีเมล @' + esc(C.ALLOWED_DOMAIN) + ' ของคุณ'}</p>
       <form id="fEmail" style="display:flex;flex-direction:column;gap:12px">
         <div class="field"><label for="em">อีเมล</label><input id="em" class="inp" type="email" autocomplete="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required value="${esc(email)}"></div>
-        <button class="btn" id="bSend" type="submit">ส่งอีเมลเข้าสู่ระบบ</button>
+        <button class="btn" id="bSend" type="submit">${C.TRIAL_EMAIL_ONLY ? 'เข้าสู่ระบบ' : 'ส่งอีเมลเข้าสู่ระบบ'}</button>
+        ${C.TRIAL_EMAIL_ONLY ? '<div class="note">โหมดทดลอง: เข้าระบบด้วยอีเมลได้ทันทีโดยไม่ยืนยันตัวตน ห้ามบันทึกข้อมูลลับ</div>' : ''}
       </form>
       ${C.ENABLE_MICROSOFT_LOGIN ? `<button class="ms" id="msLogin"><svg width="18" height="18" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>Sign in with Microsoft</button>` : ''}
     ` : `
@@ -121,6 +122,7 @@ function renderLogin(step = 'email', email = '') {
       const em = $('#em').value.trim().toLowerCase();
       if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
       $('#bSend').disabled = true;
+      if (C.TRIAL_EMAIL_ONLY) return trialLogin(em);
       const { error } = await sb.auth.signInWithOtp({ email: em, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
       if (error) { $('#bSend').disabled = false; return fail(error); }
       renderLogin('code', em);
@@ -136,6 +138,21 @@ function renderLogin(step = 'email', email = '') {
       if (error) { $('#bVerify').disabled = false; return fail(error); }
     };
   }
+}
+
+/* Trial mode: email-only sign-in. Uses a password derived from the email so the
+   database still sees a real @domain account (RLS, roles and presets keep working).
+   NOT secure: anyone who knows an address can sign in as it. Turn off via config. */
+async function trialLogin(em) {
+  const password = 'capd-trial::' + em;
+  let { error } = await sb.auth.signInWithPassword({ email: em, password });
+  if (error && /invalid login credentials/i.test(error.message)) {
+    const r = await sb.auth.signUp({ email: em, password });
+    error = r.error;
+    if (!error && !r.data.session) error = { message: 'ต้องปิด "Confirm email" ใน Supabase → Authentication → Sign In / Providers → Email ก่อน' };
+    if (error && /already registered/i.test(error.message)) error = { message: 'บัญชีนี้เคยสร้างด้วยวิธีส่งอีเมล ให้ Admin ลบผู้ใช้นี้ใน Supabase → Authentication → Users แล้วลองใหม่' };
+  }
+  if (error) { const b = $('#bSend'); if (b) b.disabled = false; return fail(error); }
 }
 
 /* =================== SHELL =================== */
