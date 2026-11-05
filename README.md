@@ -28,9 +28,9 @@ supabase/schema.sql ← รันใน Supabase SQL Editor ครั้งเ�
 2. ไปที่ **SQL Editor → New query** แล้ววางเนื้อหาไฟล์ `supabase/schema.sql` ทั้งไฟล์ จากนั้นกด **Run**
    - ระบบจะสร้างตาราง สิทธิ์ (Row Level Security) และที่เก็บไฟล์ให้ครบ
    - ถ้าต้องการกำหนดบทบาทล่วงหน้า ให้แก้รายชื่อในตาราง `role_presets` ในไฟล์ก่อนรัน (ตอนนี้มี user01 = admin, user08 = approver, user14 และ user21 = tech)
-3. ไปที่ **Project Settings → API** แล้วคัดลอกค่า 2 ค่า
+3. ไปที่ **Project Settings → API Keys** แล้วคัดลอกค่า 2 ค่า
    - `Project URL`
-   - `anon public` key
+   - **Publishable key** (`sb_publishable_...`) ห้ามใช้ Secret key
 4. เปิดไฟล์ `js/config.js` แล้วใส่ค่าทั้งสองลงไป
 
 ## ขั้นที่ 2: ตั้งค่า Login ด้วยอีเมลบริษัท (รหัส OTP 6 หลัก)
