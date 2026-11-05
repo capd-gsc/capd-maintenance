@@ -33,6 +33,8 @@ const IC = {
   docs: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h7l2 2h9v11H3z"/></svg>',
   report: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>',
   admin: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M17 7h5M19.5 4.5v5"/></svg>',
+  user: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7.5" r="4.5"/><path d="M3 21c.6-4.6 4.3-7 9-7s8.4 2.4 9 7z"/></svg>',
+  clock: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
   out: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 4h6v16h-6M3 12h12M10 7l-5 5 5 5"/></svg>'
 };
 
@@ -73,7 +75,7 @@ async function loadAll() {
   D.machines = m.data; D.requests = r.data; D.docs = d.data;
   D.profiles = NO_LOGIN ? p.data.map(x => ({ ...x, id: x.email, active: true })) : p.data;
 }
-async function reload() { try { await loadAll(); if (NO_LOGIN && S.me) { const u = D.profiles.find(x => x.email === S.me.email); if (u) S.me = u; } render(); } catch (e) { fail(e); } }
+async function reload() { try { await loadAll(); if (NO_LOGIN && S.me) { const u = D.profiles.find(x => x.email === S.me.email); if (!u) { S.me = null; try { localStorage.removeItem(USER_KEY); } catch (e) {} return renderPicker('สิทธิ์ใช้งานของคุณถูกนำออกแล้ว'); } S.me = u; } render(); } catch (e) { fail(e); } }
 
 function myTasks() {
   const u = S.me.email, r = role();
@@ -169,15 +171,17 @@ function render() {
   const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อมใหม่', list: 'งานซ่อมทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / Calibration', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบแจ้งซ่อม' };
   $('#app').innerHTML = `
   <header class="top"><div class="top-in">
-    <div class="brand">${LOGO}<div>${esc(C.APP_NAME)}<small>${esc(C.ORG)}</small></div></div>
+    <nav class="topnav">${[['home', 'หน้าหลัก'], ['new', 'แจ้งซ่อม'], ['list', 'งานซ่อม'], ['cal', 'PM / CAL'], ['report', 'รายงาน']].map(([k, l]) => `<button data-nav="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <div class="sp"></div>
-    <div class="who"><span class="nm">${esc(S.me.full_name || S.me.email)} · ${ROLES[role()]}</span></div>
-    ${NO_LOGIN ? '<button class="btn warn sm" id="logout">เปลี่ยนผู้ใช้</button>' : `<button class="iconbtn" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>`}
+    <div class="who">${IC.user}<span class="nm">${esc(S.me.full_name || S.me.email)} · ${ROLES[role()]}</span></div>
+    <button class="iconbtn k2-orange" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
+    <button class="iconbtn k2-cyan" id="refresh" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">${IC.clock}</button>
   </div></header>
   <div class="wrap">
-    <div class="crumb"><span>${esc(C.APP_NAME)}</span><span class="sep">|</span><span class="cur">${crumbs[S.view]}</span></div>
+    <div class="logoband"><div class="k2logo">${LOGO}<span>CAPD <b>MAINTENANCE</b></span></div><div class="orgtag"><i></i>${esc(C.ORG)}</div></div>
+    <div class="crumb">${IC.home}<a data-nav="home">${esc(C.APP_NAME)}</a><span class="sep">|</span><span class="cur">${crumbs[S.view]}</span></div>
     <div class="shell">
-      <nav class="rail">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${(S.view === k || (S.view === 'detail' && k === 'list')) ? 'on' : ''}" title="${l}">${IC[k]}${b ? `<span class="badge">${b}</span>` : ''}<span>${l}</span></button>`).join('')}</nav>
+      <nav class="rail">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${(S.view === k || (S.view === 'detail' && k === 'list')) ? 'on' : ''}" title="${l}" aria-label="${l}">${IC[k]}${b ? `<span class="badge">${b}</span>` : ''}<span class="lbl">${l}</span></button>`).join('')}</nav>
       <main class="main" id="main">${VIEWS[S.view]()}</main>
     </div>
   </div>`;
@@ -344,11 +348,12 @@ const VIEWS = {
     ${D.profiles.map(p => `<tr><td>${esc(p.email)}</td><td><label class="sr" for="pn-${p.id}">ชื่อ</label><input id="pn-${p.id}" class="inp" value="${esc(p.full_name || '')}"></td>
       <td><label class="sr" for="pr-${p.id}">บทบาท</label><select id="pr-${p.id}" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       ${NO_LOGIN ? '' : `<td><label class="sr" for="pa-${p.id}">ใช้งาน</label><input id="pa-${p.id}" type="checkbox" ${p.active ? 'checked' : ''}></td>`}
-      <td><button class="btn sm" data-psave="${p.id}">บันทึก</button></td></tr>`).join('')}
+      <td class="row-actions"><button class="btn sm" data-psave="${p.id}">บันทึก</button>${NO_LOGIN ? `<button class="btn ghost sm" data-pdel="${esc(p.email)}">ลบ</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>
     <h3 style="margin:22px 0 8px;font-size:16px">${NO_LOGIN ? 'เพิ่มผู้ใช้' : 'กำหนดบทบาทล่วงหน้า (ก่อนผู้ใช้ Login ครั้งแรก)'}</h3>
     <form id="fPreset" class="form" style="max-width:640px">
       <div class="field"><label for="psEmail">อีเมล</label><input id="psEmail" class="inp" type="email" required placeholder="name@${esc(C.ALLOWED_DOMAIN)}"></div>
+      ${NO_LOGIN ? '<div class="field"><label for="psName">ชื่อที่แสดง</label><input id="psName" class="inp" placeholder="เช่น สมชาย ใจดี"></div>' : ''}
       <div class="field"><label for="psRole">บทบาท</label><select id="psRole" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div class="full"><button class="btn" type="submit">บันทึก</button></div>
     </form>`;
@@ -567,12 +572,23 @@ function bind() {
   });
   $$('[data-psave]').forEach(b => b.onclick = async () => {
     const id = b.dataset.psave;
+    const target = D.profiles.find(x => String(x.id) === id);
+    if (target?.role === 'admin' && document.getElementById('pr-' + id).value !== 'admin' && D.profiles.filter(x => x.role === 'admin').length <= 1) return toast('ต้องมี Admin อย่างน้อย 1 คน');
     const { error } = NO_LOGIN
-      ? await sb.from('role_presets').update({ full_name: $('#pn-' + id).value.trim() || null, role: $('#pr-' + id).value }).eq('email', id)
-      : await sb.from('profiles').update({ full_name: $('#pn-' + id).value.trim() || null, role: $('#pr-' + id).value, active: $('#pa-' + id).checked }).eq('id', id);
+      ? await sb.from('role_presets').update({ full_name: document.getElementById('pn-' + id).value.trim() || null, role: document.getElementById('pr-' + id).value }).eq('email', id)
+      : await sb.from('profiles').update({ full_name: document.getElementById('pn-' + id).value.trim() || null, role: document.getElementById('pr-' + id).value, active: document.getElementById('pa-' + id).checked }).eq('id', id);
     if (error) return fail(error); toast('บันทึกแล้ว'); reload();
   });
-  $('#logout').onclick = async () => { if (NO_LOGIN) { try { localStorage.removeItem(USER_KEY); } catch (e) {} S.me = null; return renderPicker(); } await sb.auth.signOut(); };
+  $('#logout').onclick = async () => { if (NO_LOGIN) { try { localStorage.removeItem(USER_KEY); } catch (e) {} S.me = null; S.view = 'home'; return renderPicker(); } await sb.auth.signOut(); };
+  $$('[data-pdel]').forEach(b => b.onclick = async () => {
+    const em = b.dataset.pdel, target = D.profiles.find(x => x.email === em);
+    if (em === S.me.email) return toast('ลบบัญชีของตัวเองไม่ได้');
+    if (target?.role === 'admin' && D.profiles.filter(x => x.role === 'admin').length <= 1) return toast('ต้องมี Admin อย่างน้อย 1 คน');
+    if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ?'; return; }
+    const { error } = await sb.from('role_presets').delete().eq('email', em);
+    if (error) return fail(error); toast('ลบ ' + em + ' แล้ว'); reload();
+  });
+  $('#refresh').onclick = () => { reload(); toast('รีเฟรชข้อมูลแล้ว'); };
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq');
   $('#expReq') && ($('#expReq').onclick = exportRequests);
@@ -583,7 +599,8 @@ function bind() {
   if (fp) fp.onsubmit = async e => {
     e.preventDefault(); const em = $('#psEmail').value.trim().toLowerCase();
     if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
-    const { error } = await sb.from('role_presets').upsert({ email: em, role: $('#psRole').value });
+    const row = { email: em, role: $('#psRole').value }; if (NO_LOGIN) row.full_name = $('#psName').value.trim() || null;
+    const { error } = await sb.from('role_presets').upsert(row);
     if (error) return fail(error); toast(NO_LOGIN ? 'เพิ่มผู้ใช้แล้ว' : 'บันทึกแล้ว — จะได้บทบาทนี้เมื่อ Login ครั้งแรก'); fp.reset(); if (NO_LOGIN) reload();
   };
 
@@ -642,31 +659,27 @@ async function startNoLogin() {
   const u = D.profiles.find(x => x.email === saved);
   if (u) { S.me = u; render(); subscribe(); } else renderPicker();
 }
-function renderPicker() {
+function renderPicker(msg = '') {
   $('#app').innerHTML = `<div class="login"><div class="login-card">
-    <div class="brand" style="color:var(--link)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
-    <h1>คุณคือใคร</h1>
-    <p class="sub" style="margin:0">เลือกชื่อของคุณ ระบบจะจำไว้ในเบราว์เซอร์นี้ (เปลี่ยนได้ที่มุมขวาบน)</p>
-    <div class="quick">${D.profiles.map(u => `<button data-pick="${esc(u.email)}"><b>${esc(u.full_name || u.email)}</b><span>${ROLES[u.role] || u.role}</span></button>`).join('')}</div>
-    <form id="fNewUser" style="display:flex;flex-direction:column;gap:10px">
-      <div class="field"><label for="nuEmail">ไม่มีชื่อในรายการ? กรอกอีเมลบริษัท (จะเป็น “ผู้แจ้ง”)</label><input id="nuEmail" class="inp" type="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required></div>
-      <button class="btn" type="submit">เริ่มใช้งาน</button>
+    <div class="login-band">เข้าสู่ระบบ</div>
+    <div class="k2logo">${LOGO}<span>CAPD <b>MAINTENANCE</b></span></div>
+    <p class="sub" style="margin:0">${esc(C.ORG)} · ระบบแจ้งซ่อมและบำรุงรักษา</p>
+    <form id="fEnter" style="display:flex;flex-direction:column;gap:12px">
+      <div class="field"><label for="enEmail">อีเมลบริษัท</label><input id="enEmail" class="inp" type="email" autocomplete="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required></div>
+      ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
+      <button class="btn" type="submit">เข้าสู่ระบบ</button>
     </form>
-    <div class="note">โหมดทดลอง: ไม่มีการยืนยันตัวตน ใครมีลิงก์ก็ใช้ได้ ห้ามบันทึกข้อมูลลับ</div>
+    <p class="sub" style="margin:0">ยังไม่มีสิทธิ์ใช้งาน? ติดต่อ Admin เพื่อเพิ่มอีเมลของคุณ</p>
   </div></div>`;
-  const pick = u => { S.me = u; try { localStorage.setItem(USER_KEY, u.email); } catch (e) {} S.view = 'home'; render(); subscribe(); };
-  $$('[data-pick]').forEach(b => b.onclick = () => pick(D.profiles.find(x => x.email === b.dataset.pick)));
-  $('#fNewUser').onsubmit = async e => {
+  $('#fEnter').onsubmit = async e => {
     e.preventDefault();
-    const em = $('#nuEmail').value.trim().toLowerCase();
-    if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
-    let u = D.profiles.find(x => x.email === em);
-    if (!u) {
-      const { error } = await sb.from('role_presets').insert({ email: em, role: 'reporter' });
-      if (error) return fail(error);
-      await loadAll(); u = D.profiles.find(x => x.email === em);
-    }
-    pick(u);
+    const em = $('#enEmail').value.trim().toLowerCase();
+    if (!domainOk(em)) return renderPicker('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
+    try { await loadAll(); } catch (err) { return fail(err); }
+    const u = D.profiles.find(x => x.email === em);
+    if (!u) return renderPicker('อีเมล ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin');
+    S.me = u; try { localStorage.setItem(USER_KEY, u.email); } catch (err) {}
+    S.view = 'home'; render(); subscribe();
   };
 }
 
