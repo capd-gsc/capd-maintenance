@@ -2,6 +2,8 @@
 (() => {
 'use strict';
 const C = window.APP_CONFIG;
+const NO_LOGIN = !!C.NO_LOGIN;
+const USER_KEY = 'capd-current-user';
 const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
 
 /* ---------- constants ---------- */
@@ -64,13 +66,14 @@ async function loadAll() {
   const [m, r, p, d] = await Promise.all([
     sb.from('machines').select('*').order('machine_no'),
     sb.from('requests').select('*').order('created_at', { ascending: false }),
-    sb.from('profiles').select('*').order('email'),
+    NO_LOGIN ? sb.from('role_presets').select('*').order('email') : sb.from('profiles').select('*').order('email'),
     sb.from('documents').select('*').order('created_at', { ascending: false })
   ]);
   for (const x of [m, r, p, d]) if (x.error) throw x.error;
-  D.machines = m.data; D.requests = r.data; D.profiles = p.data; D.docs = d.data;
+  D.machines = m.data; D.requests = r.data; D.docs = d.data;
+  D.profiles = NO_LOGIN ? p.data.map(x => ({ ...x, id: x.email, active: true })) : p.data;
 }
-async function reload() { try { await loadAll(); render(); } catch (e) { fail(e); } }
+async function reload() { try { await loadAll(); if (NO_LOGIN && S.me) { const u = D.profiles.find(x => x.email === S.me.email); if (u) S.me = u; } render(); } catch (e) { fail(e); } }
 
 function myTasks() {
   const u = S.me.email, r = role();
@@ -169,7 +172,7 @@ function render() {
     <div class="brand">${LOGO}<div>${esc(C.APP_NAME)}<small>${esc(C.ORG)}</small></div></div>
     <div class="sp"></div>
     <div class="who"><span class="nm">${esc(S.me.full_name || S.me.email)} · ${ROLES[role()]}</span></div>
-    <button class="iconbtn" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
+    ${NO_LOGIN ? '<button class="btn warn sm" id="logout">เปลี่ยนผู้ใช้</button>' : `<button class="iconbtn" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>`}
   </div></header>
   <div class="wrap">
     <div class="crumb"><span>${esc(C.APP_NAME)}</span><span class="sep">|</span><span class="cur">${crumbs[S.view]}</span></div>
@@ -336,14 +339,14 @@ const VIEWS = {
   },
 
   admin() {
-    return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน (สร้างอัตโนมัติเมื่อ Login ครั้งแรก)</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>ใช้งาน</th><th></th></tr></thead><tbody>
+    return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน${NO_LOGIN ? '' : ' (สร้างอัตโนมัติเมื่อ Login ครั้งแรก)'}</span></div>
+    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th>${NO_LOGIN ? '' : '<th>ใช้งาน</th>'}<th></th></tr></thead><tbody>
     ${D.profiles.map(p => `<tr><td>${esc(p.email)}</td><td><label class="sr" for="pn-${p.id}">ชื่อ</label><input id="pn-${p.id}" class="inp" value="${esc(p.full_name || '')}"></td>
       <td><label class="sr" for="pr-${p.id}">บทบาท</label><select id="pr-${p.id}" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
-      <td><label class="sr" for="pa-${p.id}">ใช้งาน</label><input id="pa-${p.id}" type="checkbox" ${p.active ? 'checked' : ''}></td>
+      ${NO_LOGIN ? '' : `<td><label class="sr" for="pa-${p.id}">ใช้งาน</label><input id="pa-${p.id}" type="checkbox" ${p.active ? 'checked' : ''}></td>`}
       <td><button class="btn sm" data-psave="${p.id}">บันทึก</button></td></tr>`).join('')}
     </tbody></table></div>
-    <h3 style="margin:22px 0 8px;font-size:16px">กำหนดบทบาทล่วงหน้า (ก่อนผู้ใช้ Login ครั้งแรก)</h3>
+    <h3 style="margin:22px 0 8px;font-size:16px">${NO_LOGIN ? 'เพิ่มผู้ใช้' : 'กำหนดบทบาทล่วงหน้า (ก่อนผู้ใช้ Login ครั้งแรก)'}</h3>
     <form id="fPreset" class="form" style="max-width:640px">
       <div class="field"><label for="psEmail">อีเมล</label><input id="psEmail" class="inp" type="email" required placeholder="name@${esc(C.ALLOWED_DOMAIN)}"></div>
       <div class="field"><label for="psRole">บทบาท</label><select id="psRole" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
@@ -398,7 +401,7 @@ async function act(a) {
   $$('[data-act]').forEach(b => b.disabled = true);
   const { error } = await sb.from('requests').update(patch).eq('id', q.id);
   if (error) { fail(error); $$('[data-act]').forEach(b => b.disabled = false); return; }
-  await sb.from('request_logs').insert({ request_id: q.id, action: log });
+  await sb.from('request_logs').insert({ request_id: q.id, action: log, actor: S.me.email });
   toast(msg);
   await reload(); await openDetail(q.id, false);
 }
@@ -508,7 +511,7 @@ function docForm() {
       const { error } = await sb.storage.from('documents').upload(file_path, f);
       if (error) { $('#dSave').disabled = false; return fail(error); }
     }
-    const { error } = await sb.from('documents').insert({ title: $('#dTitle').value.trim(), kind: $('#dKind').value, machine_no: $('#dMachine').value || null, tags: $('#dTags').value.trim(), restricted: lock, file_path, url: url || null });
+    const { error } = await sb.from('documents').insert({ title: $('#dTitle').value.trim(), kind: $('#dKind').value, machine_no: $('#dMachine').value || null, tags: $('#dTags').value.trim(), restricted: lock, file_path, url: url || null, uploaded_by: S.me.email });
     if (error) { $('#dSave').disabled = false; return fail(error); }
     closeModal(); toast('เพิ่มเอกสารแล้ว'); reload();
   };
@@ -564,10 +567,12 @@ function bind() {
   });
   $$('[data-psave]').forEach(b => b.onclick = async () => {
     const id = b.dataset.psave;
-    const { error } = await sb.from('profiles').update({ full_name: $('#pn-' + id).value.trim() || null, role: $('#pr-' + id).value, active: $('#pa-' + id).checked }).eq('id', id);
+    const { error } = NO_LOGIN
+      ? await sb.from('role_presets').update({ full_name: $('#pn-' + id).value.trim() || null, role: $('#pr-' + id).value }).eq('email', id)
+      : await sb.from('profiles').update({ full_name: $('#pn-' + id).value.trim() || null, role: $('#pr-' + id).value, active: $('#pa-' + id).checked }).eq('id', id);
     if (error) return fail(error); toast('บันทึกแล้ว'); reload();
   });
-  $('#logout').onclick = async () => { await sb.auth.signOut(); };
+  $('#logout').onclick = async () => { if (NO_LOGIN) { try { localStorage.removeItem(USER_KEY); } catch (e) {} S.me = null; return renderPicker(); } await sb.auth.signOut(); };
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq');
   $('#expReq') && ($('#expReq').onclick = exportRequests);
@@ -579,7 +584,7 @@ function bind() {
     e.preventDefault(); const em = $('#psEmail').value.trim().toLowerCase();
     if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
     const { error } = await sb.from('role_presets').upsert({ email: em, role: $('#psRole').value });
-    if (error) return fail(error); toast('บันทึกแล้ว — จะได้บทบาทนี้เมื่อ Login ครั้งแรก'); fp.reset();
+    if (error) return fail(error); toast(NO_LOGIN ? 'เพิ่มผู้ใช้แล้ว' : 'บันทึกแล้ว — จะได้บทบาทนี้เมื่อ Login ครั้งแรก'); fp.reset(); if (NO_LOGIN) reload();
   };
 
   const ms = $('#nMachine');
@@ -597,9 +602,9 @@ function bind() {
           const { error } = await sb.storage.from('request-photos').upload(path, S.photos[i].blob, { contentType: 'image/jpeg' });
           if (error) throw error; paths.push(path);
         }
-        const { data, error } = await sb.from('requests').insert({ machine_no: ms.value, symptom: sym, urgency: document.querySelector('input[name=nUrg]:checked').value, photos: paths }).select().single();
+        const { data, error } = await sb.from('requests').insert({ machine_no: ms.value, reporter: S.me.email, symptom: sym, urgency: document.querySelector('input[name=nUrg]:checked').value, photos: paths }).select().single();
         if (error) throw error;
-        await sb.from('request_logs').insert({ request_id: data.id, action: 'แจ้งซ่อม' });
+        await sb.from('request_logs').insert({ request_id: data.id, action: 'แจ้งซ่อม', actor: S.me.email });
         S.photos = []; toast(data.id + ' ส่งแล้ว รอหัวหน้างานอนุมัติ');
         await loadAll(); openDetail(data.id);
       } catch (err) { $('#bSubmit').disabled = false; fail(err); }
@@ -624,8 +629,51 @@ async function onSession(session) {
     }).subscribe();
   } catch (e) { fail(e); }
 }
+/* ---------- no-login mode: pick who you are ---------- */
+function subscribe() {
+  if (!channel) channel = sb.channel('requests').on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
+    loadAll().then(() => { if (!$('#modal') && !document.activeElement?.matches('input,textarea,select')) render(); });
+  }).subscribe();
+}
+async function startNoLogin() {
+  S.session = { noLogin: true };
+  try { await loadAll(); } catch (e) { $('#app').innerHTML = `<div class="login"><div class="login-card"><h1>เชื่อมต่อฐานข้อมูลไม่ได้</h1><div class="err">${esc(e.message || e)}</div><p class="sub">ตรวจว่ารัน supabase/schema.sql และ supabase/trial_open_access.sql ใน Supabase แล้ว</p></div></div>`; return; }
+  let saved = null; try { saved = localStorage.getItem(USER_KEY); } catch (e) {}
+  const u = D.profiles.find(x => x.email === saved);
+  if (u) { S.me = u; render(); subscribe(); } else renderPicker();
+}
+function renderPicker() {
+  $('#app').innerHTML = `<div class="login"><div class="login-card">
+    <div class="brand" style="color:var(--link)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
+    <h1>คุณคือใคร</h1>
+    <p class="sub" style="margin:0">เลือกชื่อของคุณ ระบบจะจำไว้ในเบราว์เซอร์นี้ (เปลี่ยนได้ที่มุมขวาบน)</p>
+    <div class="quick">${D.profiles.map(u => `<button data-pick="${esc(u.email)}"><b>${esc(u.full_name || u.email)}</b><span>${ROLES[u.role] || u.role}</span></button>`).join('')}</div>
+    <form id="fNewUser" style="display:flex;flex-direction:column;gap:10px">
+      <div class="field"><label for="nuEmail">ไม่มีชื่อในรายการ? กรอกอีเมลบริษัท (จะเป็น “ผู้แจ้ง”)</label><input id="nuEmail" class="inp" type="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required></div>
+      <button class="btn" type="submit">เริ่มใช้งาน</button>
+    </form>
+    <div class="note">โหมดทดลอง: ไม่มีการยืนยันตัวตน ใครมีลิงก์ก็ใช้ได้ ห้ามบันทึกข้อมูลลับ</div>
+  </div></div>`;
+  const pick = u => { S.me = u; try { localStorage.setItem(USER_KEY, u.email); } catch (e) {} S.view = 'home'; render(); subscribe(); };
+  $$('[data-pick]').forEach(b => b.onclick = () => pick(D.profiles.find(x => x.email === b.dataset.pick)));
+  $('#fNewUser').onsubmit = async e => {
+    e.preventDefault();
+    const em = $('#nuEmail').value.trim().toLowerCase();
+    if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
+    let u = D.profiles.find(x => x.email === em);
+    if (!u) {
+      const { error } = await sb.from('role_presets').insert({ email: em, role: 'reporter' });
+      if (error) return fail(error);
+      await loadAll(); u = D.profiles.find(x => x.email === em);
+    }
+    pick(u);
+  };
+}
+
 if (C.SUPABASE_URL.includes('YOUR-PROJECT')) {
   $('#app').innerHTML = '<div class="login"><div class="login-card"><h1>ยังไม่ได้ตั้งค่า Supabase</h1><p>แก้ไขไฟล์ <code>js/config.js</code> ใส่ SUPABASE_URL และ SUPABASE_ANON_KEY ตามคู่มือใน README.md</p></div></div>';
+} else if (NO_LOGIN) {
+  startNoLogin();
 } else {
   let last;
   sb.auth.onAuthStateChange((_e, session) => { const id = session?.user?.id || null; if (id === last && S.me) { S.session = session; return; } last = id; onSession(session); });

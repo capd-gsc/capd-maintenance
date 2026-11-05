@@ -8,6 +8,9 @@ window.APP_CONFIG = {
   // โหมดทดลอง: true = พิมพ์อีเมล @scg.com แล้วเข้าได้ทันที ไม่ส่งอีเมลยืนยัน (ไม่ปลอดภัย ใช้ทดลองเท่านั้น)
   //            false = ส่งรหัส/ลิงก์ยืนยันทางอีเมล (ต้องตั้ง SMTP)
   TRIAL_EMAIL_ONLY: true,
+  // ไม่มี Login เลย: เลือกชื่อผู้ใช้จากรายการแล้วใช้งานได้ทันที (ต้องรัน supabase/trial_open_access.sql)
+  // ⚠ ใครมีลิงก์เว็บ อ่าน/แก้/ลบข้อมูลได้ทั้งหมด ใช้ทดลองเท่านั้น
+  NO_LOGIN: true,
   // เปิดปุ่ม "Sign in with Microsoft" เมื่อ IT ทำ App Registration ให้แล้ว (ดู README)
   ENABLE_MICROSOFT_LOGIN: false,
   APP_NAME: 'CAPD Maintenance',

@@ -33,7 +33,14 @@ supabase/schema.sql ← รันใน Supabase SQL Editor ครั้งเ�
    - **Publishable key** (`sb_publishable_...`) ห้ามใช้ Secret key
 4. เปิดไฟล์ `js/config.js` แล้วใส่ค่าทั้งสองลงไป
 
-## โหมดทดลอง (เปิดอยู่ตอนนี้)
+## โหมดไม่มี Login (เปิดอยู่ตอนนี้)
+`NO_LOGIN: true` ใน `js/config.js` = เปิดเว็บแล้วเลือกชื่อตัวเอง ใช้งานได้ทันที
+1. รัน `supabase/schema.sql` แล้วตามด้วย `supabase/trial_open_access.sql` ใน SQL Editor
+2. รายชื่อผู้ใช้และบทบาทอยู่ในตาราง `role_presets` (Admin แก้ได้ที่เมนู ผู้ใช้)
+3. **ไม่ปลอดภัย:** ใครมีลิงก์เว็บอ่าน แก้ และลบข้อมูลได้ทั้งหมด ใช้ทดลองเท่านั้น
+4. เลิกใช้: รัน `trial_off.sql` แล้วรัน `schema.sql` ซ้ำ จากนั้นตั้ง `NO_LOGIN: false`
+
+## โหมดทดลองแบบอีเมล (ใช้เมื่อ NO_LOGIN: false)
 ใน `js/config.js` ตั้งค่าไว้ที่ `TRIAL_EMAIL_ONLY: true` หมายความว่าพิมพ์อีเมล @scg.com แล้วเข้าได้ทันที ไม่ต้องยืนยันทางอีเมล
 - ต้องปิด **Confirm email** ใน Supabase ที่ Authentication → Sign In / Providers → Email
 - **ไม่ปลอดภัย:** ใครรู้ลิงก์เว็บก็เข้าระบบในนามใครก็ได้ ใช้ทดลองเท่านั้น ห้ามบันทึกข้อมูลลับ
