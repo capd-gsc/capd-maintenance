@@ -101,16 +101,16 @@ function renderLogin(step = 'email', email = '') {
     <div class="brand" style="color:var(--bar)">${LOGO}<div>${esc(C.APP_NAME)}<small style="color:var(--muted)">${esc(C.ORG)}</small></div></div>
     <h1>เข้าสู่ระบบด้วยอีเมลบริษัท</h1>
     ${step === 'email' ? `
-      <p class="sub" style="margin:0">ระบบจะส่งรหัส 6 หลักไปที่อีเมล @${esc(C.ALLOWED_DOMAIN)} ของคุณ</p>
+      <p class="sub" style="margin:0">ระบบจะส่งลิงก์/รหัสเข้าสู่ระบบไปที่อีเมล @${esc(C.ALLOWED_DOMAIN)} ของคุณ</p>
       <form id="fEmail" style="display:flex;flex-direction:column;gap:12px">
         <div class="field"><label for="em">อีเมล</label><input id="em" class="inp" type="email" autocomplete="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required value="${esc(email)}"></div>
-        <button class="btn" id="bSend" type="submit">ส่งรหัสเข้าสู่ระบบ</button>
+        <button class="btn" id="bSend" type="submit">ส่งอีเมลเข้าสู่ระบบ</button>
       </form>
       ${C.ENABLE_MICROSOFT_LOGIN ? `<button class="ms" id="msLogin"><svg width="18" height="18" viewBox="0 0 21 21"><rect width="10" height="10" fill="#f25022"/><rect x="11" width="10" height="10" fill="#7fba00"/><rect y="11" width="10" height="10" fill="#00a4ef"/><rect x="11" y="11" width="10" height="10" fill="#ffb900"/></svg>Sign in with Microsoft</button>` : ''}
     ` : `
-      <p class="sub" style="margin:0">ส่งรหัสไปที่ <b>${esc(email)}</b> แล้ว ตรวจกล่องจดหมาย (และ Junk) แล้วกรอกรหัส</p>
+      <p class="sub" style="margin:0">ส่งอีเมลไปที่ <b>${esc(email)}</b> แล้ว ตรวจกล่องจดหมาย (และ Junk) จากนั้น<br>• กดลิงก์ <b>Sign in</b> ในอีเมล (เปิดในเบราว์เซอร์เดียวกับหน้านี้) หรือ<br>• กรอกรหัสจากอีเมลด้านล่าง</p>
       <form id="fCode" style="display:flex;flex-direction:column;gap:12px">
-        <div class="field"><label for="code">รหัส 6 หลัก</label><input id="code" class="inp mono" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required style="font-size:20px;letter-spacing:.3em"></div>
+        <div class="field"><label for="code">รหัสจากอีเมล (ถ้ามี)</label><input id="code" class="inp mono" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required style="font-size:20px;letter-spacing:.3em"></div>
         <button class="btn" id="bVerify" type="submit">เข้าสู่ระบบ</button>
         <button class="btn ghost" type="button" id="bBack">เปลี่ยนอีเมล / ส่งใหม่</button>
       </form>`}
@@ -121,7 +121,7 @@ function renderLogin(step = 'email', email = '') {
       const em = $('#em').value.trim().toLowerCase();
       if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
       $('#bSend').disabled = true;
-      const { error } = await sb.auth.signInWithOtp({ email: em, options: { shouldCreateUser: true } });
+      const { error } = await sb.auth.signInWithOtp({ email: em, options: { shouldCreateUser: true, emailRedirectTo: location.origin + location.pathname } });
       if (error) { $('#bSend').disabled = false; return fail(error); }
       renderLogin('code', em);
     };
