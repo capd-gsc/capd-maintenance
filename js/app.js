@@ -39,7 +39,8 @@ const IC = {
 };
 
 /* ---------- state ---------- */
-const S = { session: null, me: null, view: 'home', sel: null, filter: 'all', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], photoUrls: [] };
+let PENDING_M = new URLSearchParams(location.search).get('m');
+const S = { scanNo: null, prefill: null, session: null, me: null, view: 'home', sel: null, filter: 'all', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], photoUrls: [] };
 const D = { machines: [], requests: [], profiles: [], docs: [] };
 
 /* ---------- helpers ---------- */
@@ -168,7 +169,7 @@ function render() {
   const appr = D.requests.filter(q => q.status === 'pending_approval').length;
   const nav = [['home', 'หน้าหลัก', pend], ['new', 'แจ้งซ่อม'], ['list', 'งานซ่อม'], ['approve', 'อนุมัติ', ['approver', 'admin'].includes(role()) ? appr : 0], ['machine', 'เครื่องจักร'], ['cal', 'PM / CAL'], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
-  const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อมใหม่', list: 'งานซ่อมทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / Calibration', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบแจ้งซ่อม' };
+  const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อมใหม่', list: 'งานซ่อมทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / Calibration', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบแจ้งซ่อม', scan: 'เครื่องจักร (สแกน QR)' };
   $('#app').innerHTML = `
   <header class="top"><div class="top-in">
     <nav class="topnav">${[['home', 'หน้าหลัก'], ['new', 'แจ้งซ่อม'], ['list', 'งานซ่อม'], ['cal', 'PM / CAL'], ['report', 'รายงาน']].map(([k, l]) => `<button data-nav="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
@@ -240,7 +241,7 @@ const VIEWS = {
     return `<div class="h-row"><h1>แจ้งซ่อมใหม่</h1><span class="sub">ผู้แจ้ง: ${esc(S.me.email)}</span></div>
     <form id="fNew" class="form">
       <div class="field full"><label for="nMachine">เครื่องจักร *</label>
-        <select id="nMachine" class="inp" required><option value="">— เลือกจากทะเบียนเครื่องจักร —</option>${ms.map(m => `<option value="${esc(m.machine_no)}">${esc(m.machine_no)} · ${esc(m.machine_name)} (${esc(m.location || '-')})</option>`).join('')}</select></div>
+        <select id="nMachine" class="inp" required><option value="">— เลือกจากทะเบียนเครื่องจักร —</option>${ms.map(m => `<option value="${esc(m.machine_no)}" ${m.machine_no === S.prefill ? 'selected' : ''}>${esc(m.machine_no)} · ${esc(m.machine_name)} (${esc(m.location || '-')})</option>`).join('')}</select></div>
       <div class="full" id="mInfo"></div>
       <div class="field full"><label for="nSym">อาการเสีย / รายละเอียด *</label><textarea id="nSym" class="inp" rows="3" required placeholder="เช่น อุณหภูมิ Zone 5 ขึ้นไม่ถึง Set point"></textarea></div>
       <div class="field"><span style="font-weight:600;font-size:13.5px">ความเร่งด่วน *</span><div class="urg">${OPT.prio.map((p, i) => `<label class="u-${p}" for="nUrg${i}"><input type="radio" name="nUrg" id="nUrg${i}" value="${p}" ${p === 'High' ? 'checked' : ''}>${p}</label>`).join('')}</div>
@@ -284,10 +285,10 @@ const VIEWS = {
     let rows = D.machines;
     if (S.mq) { const k = S.mq.toLowerCase(); rows = rows.filter(m => Object.values(m).join(' ').toLowerCase().includes(k)); }
     return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>
-      ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
+      ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
     <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าไฟล์ DATA.xlsx ได้โดยตรง (ชีท Machine Master, PM Master, CAL Master)' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Supplier</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(m => `<tr><td class="mono">${esc(m.machine_no)}</td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button></td>` : ''}</tr>`).join('')}
+    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
   },
 
@@ -318,6 +319,26 @@ const VIEWS = {
     ${rows.map(d => `<tr><td><span class="folio">${esc(d.title)}</span> ${d.restricted ? '<span class="lock">จำกัดสิทธิ์</span>' : ''}<br><span class="sub">${esc(d.tags)}</span></td><td>${esc(d.kind)}</td><td class="mono">${esc(d.machine_no || '-')}</td><td class="num">${fd(d.created_at, false)}</td><td class="row-actions"><button class="btn ghost sm" data-doc="${d.id}">เปิด</button>${canWrite ? `<button class="btn ghost sm" data-docdel="${d.id}">ลบ</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ไม่พบเอกสาร</div>'}
     ${hist.length ? `<h3 style="margin:18px 0 8px;font-size:16px">ประวัติการซ่อมที่เกี่ยวข้อง (${hist.length})</h3>${taskTable(hist)}` : ''}`;
+  },
+
+  scan() {
+    const m = M(S.scanNo);
+    if (!m.machine_no) return '<div class="empty">ไม่พบเครื่องจักรนี้ในระบบ</div>';
+    const open = D.requests.filter(q => q.machine_no === m.machine_no && OPEN(q.status));
+    const hist = D.requests.filter(q => q.machine_no === m.machine_no && q.status === 'closed').slice(0, 5);
+    const canClose = NO_LOGIN && ['tech', 'admin'].includes(role());
+    return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></div>
+    <div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>ช่างผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Supplier</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
+    <div class="scan-cta"><button class="btn big" data-newfor="${esc(m.machine_no)}">+ แจ้งซ่อมเครื่องนี้</button></div>
+    <h3 class="sec">ใบงานที่ค้าง (${open.length})</h3>
+    ${open.length ? open.map(q => `<div class="jcard">
+      <div class="jinfo"><span class="folio">${esc(q.id)}</span> ${pill(q.status)} <span class="u-${esc(q.urgency)}">${esc(q.urgency)}</span>
+        <div>${esc(q.symptom)}</div>
+        <div class="sub">แจ้งโดย ${esc(nm(q.reporter))} · ${fd(q.created_at)} · ช่าง ${esc(nm(q.technician))}</div></div>
+      <div class="btns"><button class="btn ghost" data-open="${esc(q.id)}">เปิดใบงาน</button>${canClose ? `<button class="btn ok" data-qclose="${esc(q.id)}">ปิดงาน</button>` : ''}</div>
+    </div>`).join('') : '<div class="empty">ไม่มีใบงานค้างของเครื่องนี้</div>'}
+    <h3 class="sec">ประวัติการซ่อมล่าสุด</h3>
+    ${taskTable(hist, 'ยังไม่มีประวัติการซ่อม')}`;
   },
 
   report() {
@@ -422,6 +443,61 @@ async function openDetail(id, scroll = true) {
   if (S.sel !== id || S.view !== 'detail') return;
   S.logs = logs || []; S.photoUrls = (signed.data || []).map(x => x.signedUrl).filter(Boolean);
   render();
+}
+
+/* ---------- QR: landing, quick close, labels ---------- */
+function landing(goHome) {
+  const no = PENDING_M; PENDING_M = null;
+  if (no) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    if (D.machines.some(m => m.machine_no === no)) { S.scanNo = no; S.view = 'scan'; return; }
+    toast('ไม่พบเครื่อง ' + no + ' ในระบบ');
+  }
+  if (goHome) S.view = 'home';
+}
+function openScan(no) { S.scanNo = no; S.view = 'scan'; render(); window.scrollTo(0, 0); }
+
+function quickClose(id) {
+  const q = D.requests.find(x => x.id === id); if (!q) return;
+  const mins = Math.max(0, Math.round((Date.now() - new Date(q.start_at || q.created_at)) / 60000));
+  modal(`<h2>ปิดงาน ${esc(q.id)}</h2><p class="sub" style="margin-top:0">${esc(q.machine_no)} · ${esc(q.symptom)}</p>
+    <form id="fQC" class="form">
+      <div class="field"><label for="qcCause">สาเหตุของปัญหา *</label><input id="qcCause" class="inp" required></div>
+      <div class="field"><label for="qcFix">การแก้ไข / ผลการซ่อม *</label><input id="qcFix" class="inp" required></div>
+      <div class="field"><label for="qcParts">อะไหล่ที่ใช้</label><input id="qcParts" class="inp" value="${esc(q.parts_used || '')}"></div>
+      <div class="field"><label for="qcDown">Downtime (นาที)</label><input id="qcDown" class="inp" type="number" min="0" value="${mins}"><span class="hint">คำนวณจากเวลาแจ้งถึงตอนนี้ แก้ได้</span></div>
+      <div class="field"><label for="qcCost">ค่าใช้จ่าย (บาท)</label><input id="qcCost" class="inp" type="number" min="0" step="0.01" value="0"></div>
+      <div class="full btns"><button class="btn ok" type="submit" id="qcSave">ยืนยันปิดงาน</button><button class="btn ghost" type="button" data-close>ยกเลิก</button></div>
+    </form>`);
+  $('#fQC').onsubmit = async e => {
+    e.preventDefault();
+    const v = i => $('#' + i).value.trim(), now = new Date().toISOString();
+    if (!v('qcCause') || !v('qcFix')) return toast('กรอกสาเหตุและการแก้ไข');
+    $('#qcSave').disabled = true;
+    const patch = { status: 'closed', start_at: q.start_at || q.created_at, end_at: now, root_cause: v('qcCause'), fix_detail: v('qcFix'), parts_used: v('qcParts') || '-',
+      downtime_min: parseInt(v('qcDown')) || 0, cost_thb: parseFloat(v('qcCost')) || 0, technician: q.technician || S.me.email, inspector: S.me.email, inspect_result: 'ปิดงานหน้าเครื่อง (QR)' };
+    const { error } = await sb.from('requests').update(patch).eq('id', q.id);
+    if (error) { $('#qcSave').disabled = false; return fail(error); }
+    await sb.from('request_logs').insert({ request_id: q.id, action: 'ปิดงานหน้าเครื่องผ่าน QR · ' + patch.fix_detail, actor: S.me.email });
+    closeModal(); toast(q.id + ' ปิดงานแล้ว'); reload();
+  };
+}
+
+const scanUrl = no => location.origin + location.pathname + '?m=' + encodeURIComponent(no);
+function qrSvg(text) { const qr = qrcode(0, 'M'); qr.addData(text); qr.make(); return qr.createSvgTag({ cellSize: 4, margin: 8, scalable: true }); }
+function printQR(list) {
+  if (typeof qrcode !== 'function') return toast('โหลดตัวสร้าง QR ไม่สำเร็จ ลองรีเฟรชหน้า');
+  if (!list.length) return toast('ยังไม่มีเครื่องจักร');
+  modal(`<div class="noprint" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><h2 style="margin:0;flex:1">สติกเกอร์ QR (${list.length})</h2><button class="btn" id="qrPrint">พิมพ์</button><button class="btn ghost" data-close>ปิด</button></div>
+    <p class="sub noprint" style="margin-top:0">พิมพ์ลงสติกเกอร์ แล้วติดที่เครื่องจักร สแกนด้วยกล้องมือถือเพื่อแจ้งซ่อมหรือปิดงาน</p>
+    <div class="qr-sheet">${list.map(m => `<div class="qr-label">
+      <div class="qr-img">${qrSvg(scanUrl(m.machine_no))}</div>
+      <div class="qr-txt"><b>${esc(m.machine_no)}</b><span>${esc(m.machine_name)}</span><small>${esc(m.location || '')}</small><em>สแกนเพื่อแจ้งซ่อม / ปิดงาน</em><small>${esc(C.APP_NAME)}</small></div>
+    </div>`).join('')}</div>`);
+  document.body.classList.add('printing-qr');
+  const bg = $('#modal'); const obs = new MutationObserver(() => { if (!document.body.contains(bg)) { document.body.classList.remove('printing-qr'); obs.disconnect(); } });
+  obs.observe(document.body, { childList: true });
+  $('#qrPrint').onclick = () => window.print();
 }
 
 /* ---------- images ---------- */
@@ -564,6 +640,11 @@ function bind() {
   $$('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act));
   $$('[data-doc]').forEach(b => b.onclick = () => openDoc(b.dataset.doc));
   $$('[data-docdel]').forEach(b => b.onclick = () => delDoc(b.dataset.docdel, b));
+  $$('[data-scan]').forEach(a => a.onclick = e => { e.preventDefault(); openScan(a.dataset.scan); });
+  $$('[data-newfor]').forEach(b => b.onclick = () => { S.prefill = b.dataset.newfor; S.view = 'new'; S.photos = []; render(); window.scrollTo(0, 0); });
+  $$('[data-qclose]').forEach(b => b.onclick = () => quickClose(b.dataset.qclose));
+  $$('[data-qr]').forEach(b => b.onclick = () => printQR([M(b.dataset.qr)]));
+  $('#qrAll') && ($('#qrAll').onclick = () => printQR(D.machines.filter(m => m.status !== 'Inactive')));
   $$('[data-medit]').forEach(b => b.onclick = () => machineForm(b.dataset.medit));
   $$('[data-done]').forEach(b => b.onclick = async () => {
     const [no, kind] = b.dataset.done.split('|'); const k = kind === 'PM' ? 'pm_last_date' : 'cal_last_date';
@@ -607,6 +688,7 @@ function bind() {
   const ms = $('#nMachine');
   if (ms) {
     ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>ช่างผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Supplier</span>${esc(m.supplier || '-')}</div></div>` : ''; };
+    if (S.prefill) { ms.onchange(); S.prefill = null; }
     $('#nPhoto').onchange = async e => { for (const f of e.target.files) { if (S.photos.length >= 4) break; const p = await shrink(f); if (p) S.photos.push(p); } $('#thumbs').innerHTML = S.photos.map(p => `<img src="${p.url}" alt="รูปที่แนบ">`).join(''); };
     $('#fNew').onsubmit = async e => {
       e.preventDefault();
@@ -640,7 +722,7 @@ async function onSession(session) {
     if (error || !me) throw error || new Error('ไม่พบโปรไฟล์ผู้ใช้');
     if (!me.active) { toast('บัญชีถูกปิดการใช้งาน ติดต่อ Admin'); return sb.auth.signOut(); }
     S.me = me;
-    await loadAll(); render();
+    await loadAll(); landing(false); render();
     if (!channel) channel = sb.channel('requests').on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
       loadAll().then(() => { if (!$('#modal') && !document.activeElement?.matches('input,textarea,select')) render(); });
     }).subscribe();
@@ -657,7 +739,7 @@ async function startNoLogin() {
   try { await loadAll(); } catch (e) { $('#app').innerHTML = `<div class="login"><div class="login-card"><h1>เชื่อมต่อฐานข้อมูลไม่ได้</h1><div class="err">${esc(e.message || e)}</div><p class="sub">ตรวจว่ารัน supabase/schema.sql และ supabase/trial_open_access.sql ใน Supabase แล้ว</p></div></div>`; return; }
   let saved = null; try { saved = localStorage.getItem(USER_KEY); } catch (e) {}
   const u = D.profiles.find(x => x.email === saved);
-  if (u) { S.me = u; render(); subscribe(); } else renderPicker();
+  if (u) { S.me = u; landing(true); render(); subscribe(); } else renderPicker();
 }
 function renderPicker(msg = '') {
   $('#app').innerHTML = `<div class="login"><div class="login-card">
@@ -679,7 +761,7 @@ function renderPicker(msg = '') {
     const u = D.profiles.find(x => x.email === em);
     if (!u) return renderPicker('อีเมล ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin');
     S.me = u; try { localStorage.setItem(USER_KEY, u.email); } catch (err) {}
-    S.view = 'home'; render(); subscribe();
+    landing(true); render(); subscribe();
   };
 }
 
