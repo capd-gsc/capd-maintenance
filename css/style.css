@@ -255,3 +255,24 @@ h3.sec{font-size:17px;margin:22px 0 10px}
   body.printing-qr .noprint{display:none !important}
   .qr-sheet{grid-template-columns:repeat(2,1fr)}
 }
+
+/* ---- v2 workflow ---- */
+.flabel{font-weight:600;font-size:13.5px}
+.choice{display:flex;flex-direction:column;gap:8px}
+.choice label{border:1px solid var(--line);padding:10px 12px;cursor:pointer;background:var(--panel)}
+.choice label:has(input:checked){border-color:var(--bar);background:var(--info-bg)}
+.box.action{border-left:4px solid var(--accent)}
+.remind{border:1px solid var(--line);border-left:4px solid var(--bad);background:var(--panel);padding:12px 14px;margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
+.rrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;cursor:pointer}
+.rrow:hover{background:var(--panel-2)}
+.tier{font-size:11.5px;font-weight:700;padding:1px 8px;border-radius:10px;color:#fff;white-space:nowrap}
+.tier.t1{background:var(--info)} .tier.t2{background:var(--warn)} .tier.t3{background:var(--bad)}
+.chain{margin:0;padding-left:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.chain li{border:1px solid var(--line);padding:8px 10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.chain li.ok{border-left:4px solid var(--ok)} .chain li.now{border-left:4px solid var(--accent);background:var(--warn-bg)} .chain li.bad{border-left:4px solid var(--bad)}
+.atts{display:flex;flex-direction:column;gap:10px}
+.attg{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.attg .sub{flex-basis:100%}
+.attg img{width:84px;height:84px;object-fit:cover;border:1px solid var(--line);display:block}
+.attg a.file{border:1px solid var(--line);padding:6px 10px;text-decoration:none;background:var(--panel-2);overflow-wrap:anywhere}
+td.c{text-align:center}
