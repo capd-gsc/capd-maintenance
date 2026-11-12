@@ -404,7 +404,7 @@ const VIEWS = {
     return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
     <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
-    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Supplier</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
+    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Vendor</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
   },
@@ -511,7 +511,7 @@ const VIEWS = {
     const stp = d => d < 0 ? `<span class="pill s-rej">เกิน ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
     return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span>
       ${isAdmin() ? `<button class="btn ghost" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost" data-qr="${esc(m.machine_no)}">QR</button>` : ''}</div>
-    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Supplier</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
+    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Vendor</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
     ${canCreate() ? `<div class="scan-cta"><button class="btn big" data-newfor="${esc(m.machine_no)}">+ แจ้งซ่อม / เปิดใบงานเครื่องนี้</button></div>` : ''}
     <h3 class="sec">ใบงานที่ค้าง (${open.length})</h3>
     ${open.length ? open.map(q => `<div class="jcard">
@@ -779,7 +779,7 @@ const MF = [
   ['machine_no', 'Machine number *', 'text'], ['machine_name', 'Machine Name *', 'text'], ['model', 'Model', 'text'], ['serial_number', 'Serial Number', 'text'],
   ['machine_type', 'Machine Type', OPT.type], ['location', 'Location', OPT.loc], ['status', 'Status', OPT.mstatus], ['priority', 'Priority', OPT.prio],
   ['maintenance_type', 'Maintenance Type', OPT.mtype], ['responsibility', 'Member ผู้รับผิดชอบ (อีเมล)', 'email'], ['eng_foreman', 'Eng, Foreman (อีเมล · ว่าง = ตามประเภทเครื่อง)', 'email'],
-  ['supplier', 'Supplier', 'text'], ['contact_person', 'Contact Person', 'text'], ['phone', 'เบอร์โทรศัพท์', 'text'], ['email', 'E-mail Supplier', 'text'], ['other_contact', 'Line / ช่องทางอื่น', 'text'],
+  ['supplier', 'Vendor', 'text'], ['contact_person', 'Contact Person', 'text'], ['phone', 'เบอร์โทรศัพท์', 'text'], ['email', 'E-mail Vendor', 'text'], ['other_contact', 'Line / ช่องทางอื่น', 'text'],
   ['pm_last_date', 'PM ล่าสุด', 'date'], ['pm_interval_month', 'PM Interval (เดือน)', OPT.interval], ['cal_last_date', 'CAL ล่าสุด', 'date'], ['cal_interval_month', 'CAL Interval (เดือน)', OPT.interval]
 ];
 function machineForm(no) {
@@ -889,7 +889,7 @@ async function importExcel(file) {
         model: g(r, 'model'), serial_number: g(r, 'serial number') && String(g(r, 'serial number')), machine_type: type, location: g(r, 'location'),
         status: g(r, 'staus', 'status') || 'Active', priority: g(r, 'priority') || 'Normal', maintenance_type: g(r, 'maintenance type') || 'No Plan',
         responsibility: g(r, 'responsibility') && String(g(r, 'responsibility')).toLowerCase(), eng_foreman: domainOk(eng.trim()) ? eng.trim().toLowerCase() : engOf(type),
-        supplier: g(r, 'supplier'), contact_person: g(r, 'contact person'), phone: g(r, 'เบอร์โทรศัพท์') && String(g(r, 'เบอร์โทรศัพท์')), email: g(r, 'e-mail'), other_contact: g(r, 'line/ช่องทางอื่น'),
+        supplier: g(r, 'vendor', 'supplier'), contact_person: g(r, 'contact person'), phone: g(r, 'เบอร์โทรศัพท์') && String(g(r, 'เบอร์โทรศัพท์')), email: g(r, 'e-mail'), other_contact: g(r, 'line/ช่องทางอื่น'),
         updated_at: new Date().toISOString()
       };
       // คอลัมน์ PM/CAL ในชีทเดียวกัน (แบบฟอร์มใหม่) — ใส่เฉพาะเมื่อมีข้อมูล เพื่อไม่ลบค่าที่ระบบอัปเดตไว้
@@ -976,7 +976,10 @@ function exportRequests() {
     'เริ่ม': fd(q.start_at), 'เสร็จ': fd(q.end_at), 'Downtime (นาที)': q.downtime_min, 'ปิดงานโดย': q.closed_by }; });
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Maintenance Requests');
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(D.machines), 'Machine Master');
+  // หัวคอลัมน์เดียวกับแบบฟอร์ม Excel → แก้แล้วนำเข้ากลับได้
+  const mm = D.machines.map(m => ({ 'Machine number': m.machine_no, 'Machine Name': m.machine_name, 'Model': m.model, 'Serial Number': m.serial_number, 'Machine Type': m.machine_type, 'Location': m.location, 'Status': m.status, 'Priority': m.priority, 'Maintenance Type': m.maintenance_type, 'Responsibility': m.responsibility, 'Eng,Foreman': m.eng_foreman,
+    'Vendor': m.supplier, 'Contact Person': m.contact_person, 'เบอร์โทรศัพท์': m.phone, 'E-mail': m.email, 'Line/ช่องทางอื่น': m.other_contact, 'PM DATE': m.pm_last_date, 'PM Interval': m.pm_interval_month, 'CAL DATE': m.cal_last_date, 'CAL Interval': m.cal_interval_month }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mm), 'Machine Master');
   XLSX.writeFile(wb, 'CAPD-Maintenance-' + todayStr() + '.xlsx');
 }
 
@@ -1101,7 +1104,7 @@ function bind() {
 
   const ms = $('#nMachine');
   if (ms) {
-    ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Supplier</span>${esc(m.supplier || '-')}</div></div>` : ''; };
+    ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div></div>` : ''; };
     if (S.prefill) { ms.onchange(); S.prefill = null; }
     $$('input[name=nMode]').forEach(r => r.onchange = () => { const self = document.querySelector('input[name=nMode]:checked').value === 'self'; $('#selfBox').hidden = !self; $('#bSubmit').textContent = self ? 'บันทึกและปิดงาน' : 'ส่งให้ Foreman Day อนุมัติ'; });
     $('#bSubmit').textContent = 'ส่งให้ Foreman Day อนุมัติ';
