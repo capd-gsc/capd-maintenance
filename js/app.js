@@ -405,7 +405,7 @@ const VIEWS = {
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
     <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Supplier</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button></td>` : ''}</tr>`).join('')}
+    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
   },
 
@@ -801,11 +801,42 @@ function machineForm(no) {
     closeModal(); toast('บันทึกแล้ว'); try { await sb.rpc('ensure_pmcal_jobs'); } catch (e2) {} reload();
   };
   const del = $('#mDel');
-  if (del) del.onclick = async () => {
-    if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'กดอีกครั้งเพื่อยืนยันการลบ'; return; }
-    const { error } = await sb.from('machines').delete().eq('machine_no', no);
-    if (error) return fail({ message: 'ลบไม่ได้ (มีใบงานอ้างอิงอยู่ ให้เปลี่ยนสถานะเป็น Inactive แทน)' });
-    closeModal(); toast('ลบแล้ว'); reload();
+  if (del) del.onclick = () => machineDeleteForm(no);
+}
+// ลบเครื่อง: ถ้ามีใบงานอ้างถึง ให้เลือกเปลี่ยนเป็น Inactive (เก็บประวัติ) หรือลบเครื่องพร้อมใบงานทั้งหมด
+async function machineDeleteForm(no) {
+  try { await loadAll(); } catch (e) { return fail(e); }
+  const m = M(no), jobs = D.requests.filter(q => q.machine_no === no), nOpen = jobs.filter(q => OPEN(q.status)).length;
+  const plan = (m.pm_last_date && m.pm_interval_month) || (m.cal_last_date && m.cal_interval_month);
+  modal(`<h2>ลบเครื่อง ${esc(no)}</h2>
+    ${jobs.length ? `<p>เครื่องนี้มีใบงาน <b>${jobs.length} ใบ</b> (ยังเปิด ${nOpen} · ปิดแล้ว ${jobs.length - nOpen}): ${jobs.slice(0, 8).map(q => esc(q.id)).join(', ')}${jobs.length > 8 ? ' …' : ''}</p>
+    <div class="choice">
+      <label><input type="radio" name="mdMode" value="inactive" checked> <b>เปลี่ยนสถานะเป็น Inactive</b> · เก็บประวัติไว้ ไม่แสดงในฟอร์มแจ้งซ่อม ไม่เปิดใบงาน PM/CAL อีก (แนะนำสำหรับเครื่องจริงที่เลิกใช้)</label>
+      <label><input type="radio" name="mdMode" value="all"> <b>ลบเครื่องพร้อมใบงานทั้งหมด ${jobs.length} ใบ</b> · ใช้ลบข้อมูลทดลอง กู้คืนไม่ได้</label>
+    </div>` : `<p>ลบเครื่องนี้ถาวร กู้คืนไม่ได้</p>`}
+    ${plan ? '<p class="sub">เครื่องนี้มีแผน PM/CAL ถ้าลบแค่ใบงานแต่ไม่ลบเครื่อง ระบบจะเปิดใบงาน PM/CAL ให้ใหม่เมื่อใกล้ครบกำหนด</p>' : ''}
+    <div class="field" id="mdConfirmBox" ${jobs.length ? 'hidden' : ''}><label for="mdConfirm">พิมพ์รหัสเครื่อง <b>${esc(no)}</b> เพื่อยืนยัน</label><input id="mdConfirm" class="inp" autocomplete="off"></div>
+    <div class="btns" style="margin-top:12px"><button class="btn ${jobs.length ? '' : 'bad'}" id="mdGo" ${jobs.length ? '' : 'disabled'}>${jobs.length ? 'เปลี่ยนเป็น Inactive' : 'ลบถาวร'}</button><button class="btn ghost" data-close>ยกเลิก</button></div>`);
+  const mode = () => document.querySelector('input[name=mdMode]:checked')?.value || 'all';
+  const sync = () => { const all = mode() === 'all'; $('#mdConfirmBox').hidden = !all; $('#mdGo').className = 'btn' + (all ? ' bad' : ''); $('#mdGo').textContent = all ? (jobs.length ? `ลบเครื่องและใบงาน ${jobs.length} ใบ` : 'ลบถาวร') : 'เปลี่ยนเป็น Inactive'; $('#mdGo').disabled = all && $('#mdConfirm').value.trim() !== no; };
+  $$('input[name=mdMode]').forEach(r => r.onchange = sync);
+  $('#mdConfirm').oninput = sync;
+  $('#mdGo').onclick = async () => {
+    $('#mdGo').disabled = true;
+    if (mode() === 'inactive') {
+      const { error } = await sb.from('machines').update({ status: 'Inactive', updated_at: new Date().toISOString() }).eq('machine_no', no);
+      if (error) { $('#mdGo').disabled = false; return fail(error); }
+      closeModal(); toast(no + ' เปลี่ยนเป็น Inactive แล้ว'); return reload();
+    }
+    if (jobs.length) {
+      const { data, error } = await sb.from('requests').delete().eq('machine_no', no).select();
+      if (error) { $('#mdGo').disabled = false; return fail(error); }
+      const paths = (data || []).flatMap(q => [...(q.photos || []), ...(q.attachments || []).map(a => a.path)]).filter(Boolean);
+      if (paths.length) { try { await sb.storage.from('request-photos').remove(paths); } catch (x) { /* ไฟล์ค้างไม่กระทบการใช้งาน */ } }
+    }
+    const { data, error } = await sb.from('machines').delete().eq('machine_no', no).select();
+    if (error || !data?.length) { $('#mdGo').disabled = false; return fail(error ? { message: 'ลบเครื่องไม่ได้: ' + error.message } : { message: 'ลบเครื่องไม่ได้ (ไม่มีสิทธิ์ Admin)' }); }
+    closeModal(); toast('ลบ ' + no + (jobs.length ? ` และใบงาน ${jobs.length} ใบแล้ว` : ' แล้ว')); S.view = 'machine'; reload();
   };
 }
 const xDate = v => { if (!v) return null; if (v instanceof Date) return new Date(v.getTime() - v.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10); const t = String(v).trim(), th = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (th) { let y = +th[3]; if (y > 2400) y -= 543; return y + '-' + pad(th[2]) + '-' + pad(th[1]); } const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
@@ -1022,6 +1053,7 @@ function bind() {
   $$('[data-qr]').forEach(b => b.onclick = () => printQR([M(b.dataset.qr)]));
   $('#qrAll') && ($('#qrAll').onclick = () => printQR(D.machines.filter(m => m.status !== 'Inactive')));
   $$('[data-medit]').forEach(b => b.onclick = () => machineForm(b.dataset.medit));
+  $$('[data-mdel]').forEach(b => b.onclick = () => machineDeleteForm(b.dataset.mdel));
   $$('[data-done]').forEach(b => b.onclick = async () => {
     const [no, kind] = b.dataset.done.split('|');
     const { error } = await sb.from('machines').update({ [kind === 'PM' ? 'pm_last_date' : 'cal_last_date']: todayStr() }).eq('machine_no', no);
