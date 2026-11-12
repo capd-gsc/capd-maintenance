@@ -26,6 +26,13 @@ const SCLS = { pending_fd: 's-wait', returned: 's-rej', wait_admin: 's-queue', e
 const STATUS_ORDER = ['pending_fd', 'returned', 'wait_admin', 'ext_repair', 'quotation', 'memo_approval', 'memo_rejected', 'po_vendor', 'closed', 'cancelled'];
 const ATT = { photo: 'รูปแจ้งซ่อม', external: 'หลักฐานแจ้ง SAP / K2', quotation: 'ใบเสนอราคา', memo: 'MEMO', po: 'PO', close: 'รูป / เอกสารหลังซ่อม' };
 const OPEN = s => s !== 'closed' && s !== 'cancelled';
+// Direct Purchase MEMO (SC-F-0030)
+const MEMO_TO = 'ผู้จัดการ Application and Material Development';
+const AUTH = [[5000, 'ผจผ.'], [300000, 'ผจส.'], [1000000, 'ผจฝ.'], [Infinity, 'กจก. / รองกจก.']];
+const authLevel = amt => AUTH.find(([lim]) => Number(amt || 0) <= lim)[1];
+const MREASON = ['เป็นการจัดหาเร่งด่วนเนื่องจาก', 'เป็นการจัดหาจากหน่วยราชการ หรือองค์การของรัฐ/รัฐวิสาหกิจ', 'เป็นการจัดหาที่ต้องใช้ความรู้ความชำนาญพิเศษเฉพาะด้าน Technical', 'เหตุผลอื่น ๆ'];
+const MMETHOD = [['nego', 'วิธีต่อรองราคา', '(อ้างอิงจากใบเสนอราคาเดิมหรือประวัติเก่าที่เคยสั่งซื้อ)'], ['compare', 'เปรียบเทียบราคา', '(มีการเปรียบเทียบราคาผู้ขายอย่างน้อย 2 ราย)'], ['special', 'ใช้วิธีพิเศษ', '']];
+const MSPECIAL = ['เป็นงานเฉพาะต้องการความรู้ความชำนาญพิเศษจากผู้จำหน่ายหรือผู้ให้บริการนั้นๆ', 'เป็นผู้ผลิตแต่เพียงผู้เดียว', 'ซื้อผ่านตัวแทนจำหน่ายที่ได้รับการแต่งตั้ง', 'เป็นตลาดของผู้ขายหรือผู้ให้บริการเนื่องจากมีผู้ผลิตน้อยราย', 'เป็นวัสดุที่ต้องจัดหาจากหน่วยราชการ หรือ องค์กรของรัฐ/รัฐวิสาหกิจ', 'เป็นการจัดหาจากบริษัทในเครือ / ร่วมทุน', 'เหตุผลอื่น ๆ'];
 
 const LOGO = '<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M9 21l5-5 3 3 6-8" fill="none" stroke="#f39a1e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="11" r="2.3" fill="#f39a1e"/></svg>';
 const IC = {
@@ -386,6 +393,8 @@ const VIEWS = {
           ${kv('หมายเหตุส่งกลับ', q.return_note ? `<span class="u-Critical">${esc(q.return_note)}</span>` : '')}
           ${OPEN(q.status) ? kv('ผู้ดำเนินการถัดไป', `<b>${esc(ownerText(q))}</b>`) : ''}
         </dl></div>
+        ${q.quotes?.length && !(OPEN(q.status) && ['quotation', 'memo_rejected', 'memo_approval'].includes(q.status) && isMine(q)) ? `<div class="box"><h3>เทียบใบเสนอราคา (${q.quotes.length})</h3>${quoteTable(q)}</div>` : ''}
+        ${q.memo_doc && !['quotation'].includes(q.status) ? `<div class="btns"><button class="btn ghost" data-memo="1">เปิด MEMO ${esc(q.memo_no || '')} (SC-F-0030)</button></div>` : ''}
         ${q.memo_approvers?.length ? memoChain(q) : ''}
         ${q.status === 'closed' ? `<div class="box"><h3>สรุปผลการซ่อม</h3><dl class="kv">
           ${kv('วิธีการแก้ไข', esc(q.fix_detail))}${kv('สาเหตุ', esc(q.root_cause))}${kv('อะไหล่ที่ใช้', esc(q.parts_used))}
@@ -531,6 +540,7 @@ const VIEWS = {
     <div class="grid2">
       <div class="box"><h3>ค่าใช้จ่ายรายเดือน</h3>${closed.length ? chart : '<div class="empty">ยังไม่มีงานที่ปิดแล้ว</div>'}</div>
       <div class="box"><h3>แผน PM / CAL</h3>${plan.length ? `<dl class="kv">${plan.map(x => `<dt>${x.kind}</dt><dd>ล่าสุด ${fd(x.last)} · ทุก ${x.iv} เดือน<br>ครบกำหนด <b>${fd(x.next)}</b> ${stp(x.days)}${x.job ? ` · <a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a>` : ''}</dd>`).join('')}</dl>` : `<div class="empty">ไม่มีแผน (${esc(m.maintenance_type)})</div>`}
+        ${vendorBox(m.machine_no)}
         <h3 style="margin-top:14px">เอกสารของเครื่อง (${docs.length})</h3>${docs.length ? docs.map(d => `<div><a href="#" class="folio" data-doc="${d.id}">${esc(d.title)}</a> <span class="sub">${esc(d.kind)}</span></div>`).join('') : '<div class="sub">ยังไม่มีเอกสาร</div>'}</div>
     </div>
     <h3 class="sec">ประวัติการซ่อม / PM / CAL (${closed.length})</h3>
@@ -584,18 +594,148 @@ function readClose(p) {
   return { fix_detail: v('Fix'), root_cause: v('Cause') || null, parts_used: v('Parts') || null, cost_thb: parseFloat(v('Cost')) || 0, start_at: s ? s.toISOString() : null, end_at: e.toISOString(), downtime_min: mins, closed_by: S.me.email, status: 'closed' };
 }
 const box = (t, inner) => `<div class="box action"><h3>${t}</h3>${inner}</div>`;
+// ---------- ใบเสนอราคา (เทียบราคา 3 ใบ) + ฟอร์ม MEMO ----------
+const num2 = v => Number(v || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const attUrl = path => S.att.find(x => x.path === path)?.url;
+function vendorNames(no) {
+  const own = new Set(), all = new Set();
+  if (M(no).supplier) own.add(M(no).supplier);
+  D.requests.forEach(r => { (r.quotes || []).forEach(x => (r.machine_no === no ? own : all).add(x.vendor)); if (r.vendor) (r.machine_no === no ? own : all).add(r.vendor); });
+  D.machines.forEach(m => m.supplier && all.add(m.supplier));
+  return [...own, ...[...all].filter(v => !own.has(v))].filter(Boolean);
+}
+function quoteRows(q) {
+  const qs = q.quotes?.length ? q.quotes : (M(q.machine_no).supplier ? [{ vendor: M(q.machine_no).supplier, chosen: true }] : []);
+  const hasChosen = qs.some(x => x.chosen);
+  return `<datalist id="vlist">${vendorNames(q.machine_no).map(v => `<option value="${esc(v)}">`).join('')}</datalist>
+  <div class="tbl-wrap"><table class="qtbl"><thead><tr><th>เลือก</th><th>Vendor</th><th>เลขที่ใบเสนอราคา</th><th>ราคารวม VAT (บาท)</th><th>ส่งของ (วัน)</th><th>ยืนราคาถึง</th><th>ไฟล์ใบเสนอราคา</th></tr></thead><tbody>${[0, 1, 2].map(i => { const x = qs[i] || {}; return `<tr>
+    <td class="c"><input type="radio" name="qC" value="${i}" ${x.chosen || (!hasChosen && !i) ? 'checked' : ''} aria-label="เลือกใบที่ ${i + 1}"></td>
+    <td><input class="inp" id="qV${i}" list="vlist" value="${esc(x.vendor || '')}" placeholder="Vendor ${i + 1}" aria-label="Vendor ${i + 1}"></td>
+    <td><input class="inp" id="qN${i}" value="${esc(x.no || '')}" aria-label="เลขที่ใบเสนอราคา ${i + 1}"></td>
+    <td><input class="inp" id="qA${i}" type="number" min="0" step="0.01" value="${x.amount ?? ''}" aria-label="ราคา ${i + 1}"></td>
+    <td><input class="inp" id="qL${i}" type="number" min="0" value="${x.lead ?? ''}" aria-label="ส่งของ ${i + 1}"></td>
+    <td><input class="inp" id="qX${i}" type="date" value="${esc(x.valid || '')}" aria-label="ยืนราคาถึง ${i + 1}"></td>
+    <td>${x.file ? `<a class="file" href="${esc(attUrl(x.file) || '#')}" target="_blank" rel="noopener">แนบแล้ว</a><br>` : ''}<input class="inp" id="qF${i}" type="file" aria-label="ไฟล์ใบเสนอราคา ${i + 1}"></td></tr>`; }).join('')}</tbody></table></div>
+  <span class="hint">พิมพ์ชื่อ Vendor ใหม่ได้ · แนะนำ 3 ใบ · วิธี “เปรียบเทียบราคา” ต้องมีอย่างน้อย 2 ราย · ใบที่เลือกต้องแนบไฟล์</span>`;
+}
+function memoDefaults(q) {
+  return { to: MEMO_TO, via: '', subject: 'ขออนุมัติจัดหาโดยตรงจากหน่วยงาน', item: q.job_type === 'pmcal' ? `${q.pmcal_kind} เครื่อง ${q.machine_no} ${M(q.machine_no).machine_name || ''}` : q.symptom, reasons: [2], reasonOther: '', method: (q.quotes?.length || 0) >= 2 ? 'compare' : 'special', special: [0], io: '', ce: '523074', cc: '6141-08000', pr: '' };
+}
+function memoFields(q) {
+  const md = { ...memoDefaults(q), ...(q.memo_doc || {}) };
+  return `<div class="field full"><span class="flabel">ข้อมูล MEMO (แบบฟอร์ม SC-F-0030 · Direct Purchase Memo)</span><span class="hint" id="authHint"></span></div>
+    <div class="field"><span class="flabel">เรียน</span><div style="padding:8px 0">${esc(MEMO_TO)}</div></div>
+    <div class="field"><label for="mdVia">ผ่าน (ถ้ามี)</label><input id="mdVia" class="inp" value="${esc(md.via)}"></div>
+    <div class="field"><label for="mdSub">เรื่อง</label><input id="mdSub" class="inp" value="${esc(md.subject)}"></div>
+    <div class="field"><label for="mfMemoNo">เลขที่ MEMO *</label><input id="mfMemoNo" class="inp" value="${esc(q.memo_no || '')}"></div>
+    <div class="field full"><label for="mdItem">รายการที่จัดหา *</label><input id="mdItem" class="inp" value="${esc(md.item)}"></div>
+    <div class="field full"><span class="flabel">เหตุผลการจัดหาโดยตรง *</span>${MREASON.map((r, i) => `<label><input type="checkbox" name="mdR" value="${i}" ${md.reasons.includes(i) ? 'checked' : ''}> ${r}</label>`).join('')}
+      <input id="mdRo" class="inp" placeholder="ระบุ (เร่งด่วนเนื่องจาก… / เหตุผลอื่น)" value="${esc(md.reasonOther)}" aria-label="ระบุเหตุผลเพิ่มเติม"></div>
+    <div class="field full"><span class="flabel">วิธีการจัดหา *</span>${MMETHOD.map(([k, l, d]) => `<label><input type="radio" name="mdM" value="${k}" ${md.method === k ? 'checked' : ''}> ${l} <span class="sub">${d}</span></label>`).join('')}
+      <div id="mdSp" style="padding-left:22px" ${md.method === 'special' ? '' : 'hidden'}>${MSPECIAL.map((r, i) => `<label style="display:block"><input type="checkbox" name="mdS" value="${i}" ${md.special.includes(i) ? 'checked' : ''}> ${r}</label>`).join('')}</div></div>
+    <div class="field"><label for="mdIo">I/O No.</label><input id="mdIo" class="inp" value="${esc(md.io)}"></div>
+    <div class="field"><label for="mdCe">Cost element</label><input id="mdCe" class="inp" value="${esc(md.ce)}"></div>
+    <div class="field"><label for="mdCc">Cost center</label><input id="mdCc" class="inp" value="${esc(md.cc)}"></div>
+    <div class="field"><label for="mdPr">PR No. (ถ้ามี)</label><input id="mdPr" class="inp" value="${esc(md.pr)}"></div>`;
+}
 function memoForm(q) {
   const apps = memoApprovers();
   const sel = i => `<div class="field"><label for="mfApp${i}">App ${i + 1}${i === 0 ? ' *' : ''}</label><select id="mfApp${i}" class="inp">${userOpts(apps, q.memo_approvers[i], i === 0 ? '— เลือกผู้อนุมัติ —' : '— ไม่มี —')}</select></div>`;
   return `<div class="form">
-    <div class="field"><label for="mfVendor">Vendor *</label><input id="mfVendor" class="inp" value="${esc(q.vendor || '')}"></div>
-    <div class="field"><label for="mfAmt">ราคาตามใบเสนอราคา (บาท) *</label><input id="mfAmt" class="inp" type="number" min="0" step="0.01" value="${q.quotation_amount ?? ''}"></div>
-    <div class="field"><label for="mfQuo">ไฟล์ใบเสนอราคา ${S.att.some(a => a.kind === 'quotation') ? '(แนบแล้ว เพิ่มได้)' : '*'}</label><input id="mfQuo" class="inp" type="file" multiple></div>
-    <div class="field"><label for="mfMemoNo">เลขที่ MEMO *</label><input id="mfMemoNo" class="inp" value="${esc(q.memo_no || '')}"></div>
-    <div class="field"><label for="mfMemo">ไฟล์ MEMO</label><input id="mfMemo" class="inp" type="file" multiple></div>
+    <div class="field full"><span class="flabel">ใบเสนอราคา (แนะนำ 3 ใบเพื่อเทียบราคา · เลือกใบที่จะใช้)</span>${quoteRows(q)}</div>
+    <div class="field"><label for="qS">เหตุผลที่เลือก</label><input id="qS" class="inp" value="${esc(q.select_reason || 'ราคาต่ำสุด')}"></div>
+    <div class="field"><label for="qR">ถ้ามีน้อยกว่า 3 ใบ เพราะ</label><input id="qR" class="inp" value="${esc(q.quote_reason || '')}" placeholder="เช่น อะไหล่แท้มีตัวแทนเจ้าเดียว"></div>
+    ${memoFields(q)}
+    <div class="field"><label for="mfMemo">ไฟล์ MEMO ที่ลงนามแล้ว (ถ้ามี)</label><input id="mfMemo" class="inp" type="file" multiple></div>
     <div class="field full"><span class="flabel">ผู้อนุมัติ MEMO ตามลำดับ</span><span class="hint">อนุมัติทีละคน App 1 → App 2 → App 3 · รายชื่อมาจากผู้ใช้ที่ Admin ติ๊ก “อนุมัติ MEMO ได้”</span></div>
     ${sel(0)}${sel(1)}${sel(2)}
   </div>`;
+}
+// อ่านแถวใบเสนอราคาจากฟอร์ม (null = ข้อมูลไม่ครบ)
+function readQuotes(q) {
+  const v = id => ($('#' + id)?.value || '').trim(), ci = +(document.querySelector('input[name=qC]:checked')?.value || 0);
+  const out = [];
+  for (const i of [0, 1, 2]) {
+    const vendor = v('qV' + i), amt = v('qA' + i);
+    if (!vendor && amt === '') continue;
+    if (!vendor || amt === '' || isNaN(parseFloat(amt))) { toast(`ใบเสนอราคาแถว ${i + 1}: กรอกทั้ง Vendor และราคา`); return null; }
+    out.push({ i, vendor, no: v('qN' + i) || null, amount: parseFloat(amt), lead: v('qL' + i) === '' ? null : parseInt(v('qL' + i)), valid: v('qX' + i) || null, file: (q.quotes || [])[i]?.vendor === vendor ? (q.quotes[i].file || null) : null, chosen: i === ci });
+  }
+  return out;
+}
+function readMemo() {
+  const v = id => ($('#' + id)?.value || '').trim(), all = n => [...document.querySelectorAll(`input[name=${n}]:checked`)].map(x => +x.value);
+  return { to: MEMO_TO, via: v('mdVia'), subject: v('mdSub'), item: v('mdItem'), reasons: all('mdR'), reasonOther: v('mdRo'), method: document.querySelector('input[name=mdM]:checked')?.value || null, special: all('mdS'), io: v('mdIo'), ce: v('mdCe'), cc: v('mdCc'), pr: v('mdPr') };
+}
+function authHint() {
+  const h = $('#authHint'); if (!h) return;
+  const ci = +(document.querySelector('input[name=qC]:checked')?.value || 0), amt = parseFloat($('#qA' + ci)?.value);
+  h.innerHTML = isNaN(amt) ? '' : `ราคาที่เลือก ${num2(amt)} บาท · ตามอำนาจดำเนินการ GSC ต้องให้ <b>${authLevel(amt)}</b> อนุมัติ`;
+}
+function quoteTable(q) {
+  const qs = q.quotes || []; if (!qs.length) return '';
+  const min = Math.min(...qs.map(x => Number(x.amount))), today = todayStr();
+  const prev = D.requests.filter(x => x.id !== q.id && x.machine_no === q.machine_no && x.job_type === q.job_type && (x.job_type !== 'pmcal' || x.pmcal_kind === q.pmcal_kind) && x.status === 'closed' && x.quotation_amount != null).sort((a, b) => String(b.end_at).localeCompare(String(a.end_at)))[0];
+  const cur = Number(q.quotation_amount ?? qs.find(x => x.chosen)?.amount ?? 0);
+  return `<div class="tbl-wrap"><table><thead><tr><th>Vendor</th><th>เลขที่</th><th class="num">ราคารวม VAT (บาท)</th><th class="num">ส่งของ</th><th>ยืนราคาถึง</th><th>ไฟล์</th><th></th></tr></thead><tbody>${qs.map(x => `<tr class="${x.chosen ? 'chosen' : ''}"><td>${esc(x.vendor)}</td><td class="mono">${esc(x.no || '-')}</td><td class="num">${num2(x.amount)}${Number(x.amount) === min && qs.length > 1 ? ' <span class="pill s-confirm">ต่ำสุด</span>' : ''}</td><td class="num">${x.lead != null ? x.lead + ' วัน' : '-'}</td><td>${x.valid ? fd(x.valid) + (x.valid < today && OPEN(q.status) ? ' <span class="pill s-rej">หมดอายุ</span>' : '') : '-'}</td><td>${x.file && attUrl(x.file) ? `<a class="file" href="${esc(attUrl(x.file))}" target="_blank" rel="noopener">เปิด</a>` : '-'}</td><td>${x.chosen ? '<b>เลือก</b>' : ''}</td></tr>`).join('')}</tbody></table></div>
+  ${qs.length < 3 ? `<p class="sub" style="margin:6px 0 0">มี ${qs.length} ใบ (แนะนำ 3 ใบ)${q.quote_reason ? ' · ' + esc(q.quote_reason) : ''}</p>` : ''}${q.select_reason ? `<p class="sub" style="margin:4px 0 0">เหตุผลที่เลือก: ${esc(q.select_reason)}</p>` : ''}
+  ${prev ? `<p class="sub" style="margin:4px 0 0">ครั้งก่อน ${esc(prev.id)} (${fd(prev.end_at, false)}): ${esc(prev.vendor || '-')} ${money(prev.quotation_amount)}${cur && Number(prev.quotation_amount) ? ' · ครั้งนี้' + (cur >= Number(prev.quotation_amount) ? 'แพงขึ้น ' : 'ถูกลง ') + Math.abs((cur - prev.quotation_amount) / prev.quotation_amount * 100).toFixed(0) + '%' : ''}</p>` : ''}`;
+}
+// เวลาที่ App แต่ละคนอนุมัติ (จากประวัติ หลังการส่ง MEMO ครั้งล่าสุด)
+function memoApprovedAt(i) {
+  let start = -1; S.logs.forEach((l, k) => { if (/^ส่ง MEMO /.test(l.action)) start = k; });
+  return S.logs.slice(start + 1).find(l => l.action.startsWith(`App ${i + 1} อนุมัติ MEMO`));
+}
+function memoHtml(q, md, qs, apps, preview) {
+  const ch = qs.find(x => x.chosen) || qs[0] || {}, bx = on => on ? '☑' : '☐', m = M(q.machine_no);
+  const done = st => !preview && (['po_vendor', 'closed'].includes(q.status) || (q.status === 'memo_approval' && st < q.memo_step));
+  const sig = (who, i) => { const l = i == null ? null : done(i) && memoApprovedAt(i); return `<div class="msig">${i == null ? (preview ? '<span class="sub">ส่งในระบบเมื่อกดส่ง MEMO</span>' : `<span class="ok-t">ส่งในระบบ ${fd(md.date)}</span>`) : done(i) ? `<span class="ok-t">อนุมัติในระบบ${l ? ' ' + fd(l.at) : ''}</span>` : '<span class="sub">รออนุมัติ</span>'}</div><b>( ${esc(nm(who))} )</b>`; };
+  return `<div class="memo-doc">
+    <div class="memo-title">DIRECT PURCHASE MEMO</div>
+    <table class="memo-hd"><tbody>
+      <tr><td class="lab">เรียน</td><td><b>${esc(md.to || MEMO_TO)}</b></td><td style="width:34%">DATE : ${fd(md.date || todayStr())}</td></tr>
+      <tr><td class="lab">ผ่าน</td><td>${esc(md.via || '')}</td><td>PR No : ${esc(md.pr || '')}</td></tr>
+      <tr><td class="lab">จาก</td><td><b>${esc(nm(md.from || S.me.email))}</b></td><td>MEMO No : ${esc(q.memo_no || md.no || '')}</td></tr>
+      <tr><td colspan="3"><b>เรื่อง : ${esc(md.subject)}</b></td></tr></tbody></table>
+    <div class="memo-body">
+      <p class="ind">ตามที่หน่วยงาน CaPD${m.machine_no ? ' ซึ่งเป็นผู้ดูแลเครื่อง ' + esc(m.machine_no) + ' ' + esc(m.machine_name) : ''} ได้รับมอบหมายให้ดำเนินการจัดหา ${esc(md.item)} มูลค่า ${num2(ch.amount)} บาท (รวม VAT) นั้น</p>
+      <p class="ind">การจัดซื้อจัดจ้างดังกล่าวมีความจำเป็นต้องดำเนินการโดยวิธีเฉพาะเจาะจง จาก ${esc(ch.vendor || '')} ${ch.no ? '(ใบเสนอราคา ' + esc(ch.no) + ')' : ''} ด้วยเหตุผลดังต่อไปนี้</p>
+      ${MREASON.map((r, i) => `<div>${bx(md.reasons.includes(i))} ${r}${(i === 0 || i === 3) && md.reasons.includes(i) && md.reasonOther ? ' ' + esc(md.reasonOther) : ''}</div>`).join('')}
+      <div style="margin-top:6px">ด้วยเหตุผลดังกล่าวจึงขออนุมัติจัดหาโดยตรงด้วยวิธี</div>
+      ${MMETHOD.map(([k, l, d]) => `<div>${bx(md.method === k)} ${l} <span class="sub">${d}</span></div>`).join('')}
+      ${md.method === 'special' ? `<div style="padding-left:2em">เนื่องจาก${MSPECIAL.map((r, i) => `<div>${bx(md.special.includes(i))} ${r}</div>`).join('')}</div>` : ''}
+      ${qs.length > 1 ? `<div style="margin-top:6px"><b>ราคาเปรียบเทียบ:</b> ${qs.map(x => `${esc(x.vendor)} ${num2(x.amount)} บาท${x.chosen ? ' (เลือก)' : ''}`).join(' · ')}</div>` : ''}
+      <div style="margin-top:8px"><b>งบประมาณที่ใช้ในการดำเนินการ</b> I/O No. ${esc(md.io || '…………')} &nbsp; Cost element ${esc(md.ce || '…………')} &nbsp; Cost center ${esc(md.cc || '…………')}</div>
+    </div>
+    <div class="memo-sign">
+      <div>จึงเรียนมาเพื่อโปรดพิจารณาอนุมัติ${sig(md.from || S.me.email, null)}<div>ผู้ขออนุมัติ</div></div>
+      <div>อนุมัติ${apps.map((e, i) => `<div style="margin-top:6px">${sig(e, i)}<div>App ${i + 1}</div></div>`).join('') || '<div class="sub">ยังไม่ได้เลือกผู้อนุมัติ</div>'}</div>
+    </div>
+    <table class="memo-auth"><tbody><tr><td colspan="3"><b>อำนาจดำเนินการ GSC</b></td></tr>${AUTH.map(([lim, l], i) => `<tr class="${authLevel(ch.amount) === l ? 'hit' : ''}"><td>${i < 3 ? 'ไม่เกิน' : 'เกิน'}</td><td>${i < 3 ? lim.toLocaleString() + ' บาท' : '1 ล้านบาท'}</td><td>${l}</td></tr>`).join('')}</tbody></table>
+    <div class="memo-note">หมายเหตุ : ระดับการอนุมัติในตารางไว้ใช้สำหรับอ้างอิงเบื้องต้นเท่านั้น สามารถตรวจสอบรายละเอียดได้จากอนก.ของแต่ละบริษัท</div>
+    <div class="memo-rev">SC-F-0030 - REV0</div></div>`;
+}
+function memoModal(q, md, qs, apps, preview) {
+  modal(`<div class="btns noprint" style="justify-content:space-between;align-items:center;margin-bottom:10px"><h2 style="margin:0">${preview ? 'ตัวอย่าง ' : ''}MEMO ${esc(q.memo_no || '')}</h2><div class="btns"><button class="btn" id="memoPrint">พิมพ์ / บันทึก PDF</button><button class="btn ghost" data-close>ปิด</button></div></div>
+    ${preview ? '<p class="sub noprint" style="margin-top:0">ตัวอย่างจากข้อมูลที่กรอก ยังไม่ได้บันทึก</p>' : ''}${memoHtml(q, md, qs, apps, preview)}`);
+  document.body.classList.add('printing-memo');
+  const bg = $('#modal'); const obs = new MutationObserver(() => { if (!document.body.contains(bg)) { document.body.classList.remove('printing-memo'); obs.disconnect(); } });
+  obs.observe(document.body, { childList: true });
+  $('#memoPrint').onclick = () => window.print();
+}
+function openMemo(q) { memoModal(q, { ...memoDefaults(q), ...(q.memo_doc || {}) }, q.quotes || [], q.memo_approvers || [], false); }
+function previewMemo(q) {
+  const qs = readQuotes(q); if (!qs) return;
+  memoModal({ ...q, memo_no: ($('#mfMemoNo')?.value || '').trim() }, readMemo(), qs, [0, 1, 2].map(i => ($('#mfApp' + i)?.value || '')).filter(Boolean), true);
+}
+// Dashboard เครื่อง: Vendor ที่เคยเสนอราคา
+function vendorBox(no) {
+  const js = D.requests.filter(r => r.machine_no === no), st = {};
+  js.forEach(r => (r.quotes || []).forEach(x => { const o = st[x.vendor] ||= { n: 0, won: 0, last: null, leads: [] }; o.n++; if (x.chosen && r.status !== 'memo_rejected') o.won++; if (x.lead != null) o.leads.push(x.lead); if (!o.last || r.created_at > o.last.at) o.last = { amount: x.amount, at: r.created_at, id: r.id }; }));
+  const sup = M(no).supplier; if (sup && !st[sup]) st[sup] = { n: 0, won: 0, last: null, leads: [] };
+  const rows = Object.entries(st).sort((a, b) => b[1].won - a[1].won || b[1].n - a[1].n);
+  return `<h3 style="margin-top:14px">Vendor และราคา <span class="pill ${rows.length >= 3 ? 's-confirm' : 's-wait'}">${rows.length} ราย${rows.length < 3 ? ' · แนะนำอย่างน้อย 3 ราย' : ''}</span></h3>
+    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Vendor</th><th class="num">เสนอราคา</th><th class="num">ได้งาน</th><th class="num">ราคาล่าสุด</th><th class="num">ส่งของเฉลี่ย</th></tr></thead><tbody>${rows.map(([v, o]) => `<tr><td>${esc(v)}${v === sup ? ' <span class="sub">(Machine Master)</span>' : ''}</td><td class="num">${o.n}</td><td class="num">${o.won}</td><td class="num">${o.last ? num2(o.last.amount) + `<br><span class="sub">${esc(o.last.id)}</span>` : '-'}</td><td class="num">${o.leads.length ? Math.round(o.leads.reduce((a, b) => a + b, 0) / o.leads.length) + ' วัน' : '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">ยังไม่มีข้อมูล Vendor</div>'}`;
 }
 function actions(q) {
   if (!OPEN(q.status)) return '';
@@ -635,11 +775,13 @@ function actions(q) {
     case 'quotation': case 'memo_rejected':
       if (!(mine || is('foreman_day'))) return waitNote();
       return (q.job_type === 'pmcal' && !q.action_at ? box('เริ่มดำเนินการ PM/CAL', `<p class="sub" style="margin-top:0">กดเมื่อเริ่มขอใบเสนอราคาจาก Vendor แล้ว ระบบจะหยุดส่งอีเมลเตือน</p><div class="btns"><button class="btn warn" data-act="pm_action">เริ่มดำเนินการแล้ว</button></div>`) : '')
-        + box(q.status === 'memo_rejected' ? 'แก้ไข MEMO แล้วส่งอนุมัติใหม่' : 'ใบเสนอราคา และออก MEMO', (q.status === 'memo_rejected' ? `<p class="u-Critical" style="margin-top:0">MEMO ไม่อนุมัติ: ${esc(q.return_note || '-')}</p>` : '') + memoForm(q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="memo_submit">ส่ง MEMO ให้ Manager อนุมัติ</button></div>`);
+        + box(q.status === 'memo_rejected' ? 'แก้ไข MEMO แล้วส่งอนุมัติใหม่' : 'ใบเสนอราคา และออก MEMO', (q.status === 'memo_rejected' ? `<p class="u-Critical" style="margin-top:0">MEMO ไม่อนุมัติ: ${esc(q.return_note || '-')}</p>` : '') + memoForm(q) + `<div class="btns" style="margin-top:12px"><button class="btn ghost" id="memoPrev" type="button">ดูตัวอย่าง MEMO</button><button class="btn ghost" data-act="memo_draft">บันทึกร่าง</button><button class="btn ok" data-act="memo_submit">ส่ง MEMO ให้ Manager อนุมัติ</button></div>`);
     case 'memo_approval': {
       const cur = q.memo_approvers[q.memo_step];
       if (cur !== me) return waitNote();
-      return box(`App ${q.memo_step + 1}: พิจารณา MEMO ${esc(q.memo_no || '')}`, `<p style="margin-top:0">Vendor <b>${esc(q.vendor || '-')}</b> · ราคา <b>${money(q.quotation_amount)}</b> · ดูไฟล์ใบเสนอราคาและ MEMO ในส่วนไฟล์แนบ</p>
+      return box(`App ${q.memo_step + 1}: พิจารณา MEMO ${esc(q.memo_no || '')}`, `<p style="margin-top:0">เลือก <b>${esc(q.vendor || '-')}</b> · ราคา <b>${money(q.quotation_amount)}</b> · วงเงินนี้ต้องอนุมัติระดับ <b>${authLevel(q.quotation_amount)}</b></p>
+        ${quoteTable(q)}${(q.quotes || []).some(x => x.chosen && x.valid && x.valid < todayStr()) ? '<div class="note" style="margin-top:8px;background:var(--bad-bg)">ใบเสนอราคาที่เลือกหมดอายุยืนราคาแล้ว ควรขอยืนยันราคากับ Vendor ก่อนอนุมัติ</div>' : ''}
+        ${q.memo_doc ? '<div class="btns" style="margin:8px 0"><button class="btn ghost sm" data-memo="1">เปิด MEMO</button></div>' : ''}
         <div class="field"><label for="maNote">ความเห็น (ต้องกรอกถ้าไม่อนุมัติ)</label><input id="maNote" class="inp"></div>
         <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="memo_approve">อนุมัติ</button><button class="btn bad" data-act="memo_reject">ไม่อนุมัติ · ส่งกลับแก้ไข</button></div>`);
     }
@@ -693,15 +835,37 @@ async function act(a) {
         break;
       }
       case 'pm_action': patch = { action_at: now }; log = 'Member เริ่มดำเนินการ (ขอใบเสนอราคา)'; msg = 'บันทึกแล้ว หยุดส่งอีเมลเตือน'; break;
-      case 'memo_submit': {
-        const apps = [v('mfApp0'), v('mfApp1'), v('mfApp2')].filter(Boolean);
-        if (!v('mfVendor') || v('mfAmt') === '' || !v('mfMemoNo')) return toast('กรอก Vendor, ราคา และเลขที่ MEMO');
-        if (!apps.length) return toast('เลือกผู้อนุมัติ App 1');
-        if (new Set(apps).size !== apps.length) return toast('ผู้อนุมัติซ้ำกัน');
-        if (!filesOf('mfQuo').length && !(q.attachments || []).some(x => x.kind === 'quotation')) return toast('แนบไฟล์ใบเสนอราคา');
-        const added = [...await uploadFiles(q.id, 'quotation', filesOf('mfQuo')), ...await uploadFiles(q.id, 'memo', filesOf('mfMemo'))];
-        patch = { status: 'memo_approval', vendor: v('mfVendor'), quotation_amount: parseFloat(v('mfAmt')), memo_no: v('mfMemoNo'), memo_approvers: apps, memo_step: 0, memo_round: (q.memo_round || 0) + 1, action_at: q.action_at || now, return_note: null, attachments: [...(q.attachments || []), ...added] };
-        log = `ส่ง MEMO ${patch.memo_no} ให้อนุมัติ: ${apps.map((e, i) => 'App' + (i + 1) + ' ' + nm(e)).join(' → ')}`; msg = 'ส่ง MEMO แล้ว'; break;
+      case 'memo_draft': case 'memo_submit': {
+        const qs = readQuotes(q); if (!qs) return;
+        const md = readMemo(), memoNo = v('mfMemoNo'), apps = [v('mfApp0'), v('mfApp1'), v('mfApp2')].filter(Boolean);
+        const files = {}; qs.forEach(x => { const f = filesOf('qF' + x.i); if (f.length) files[x.i] = f[0]; });
+        if (a === 'memo_submit') {
+          const ch = qs.find(x => x.chosen);
+          if (!qs.length) return toast('กรอกใบเสนอราคาอย่างน้อย 1 ใบ');
+          if (!ch) return toast('เลือกใบเสนอราคาที่จะใช้ (ปุ่มวงกลมหน้าแถว)');
+          if (!ch.file && !files[ch.i]) return toast('แนบไฟล์ใบเสนอราคาของ Vendor ที่เลือก');
+          if (!md.item) return toast('กรอกรายการที่จัดหา');
+          if (!md.reasons.length) return toast('เลือกเหตุผลการจัดหาโดยตรงอย่างน้อย 1 ข้อ');
+          if ((md.reasons.includes(0) || md.reasons.includes(3)) && !md.reasonOther) return toast('ระบุเหตุผลเพิ่มเติม (เร่งด่วนเนื่องจาก… / เหตุผลอื่น)');
+          if (!md.method) return toast('เลือกวิธีการจัดหา');
+          if (md.method === 'compare' && qs.length < 2) return toast('วิธีเปรียบเทียบราคาต้องมีใบเสนอราคาอย่างน้อย 2 ราย');
+          if (md.method === 'special' && !md.special.length) return toast('เลือกเหตุผลของวิธีพิเศษ');
+          if (!memoNo) return toast('กรอกเลขที่ MEMO');
+          if (!apps.length) return toast('เลือกผู้อนุมัติ App 1');
+          if (new Set(apps).size !== apps.length) return toast('ผู้อนุมัติซ้ำกัน');
+        }
+        $$('[data-act]').forEach(b => b.disabled = true);
+        const added = [];
+        try {
+          for (const x of qs) if (files[x.i]) { const up = await uploadFiles(q.id, 'quotation', [files[x.i]]); added.push(...up); x.file = up[0].path; }
+          added.push(...await uploadFiles(q.id, 'memo', filesOf('mfMemo')));
+        } catch (e) { $$('[data-act]').forEach(b => b.disabled = false); return fail(e); }
+        const quotes = qs.map(({ i, ...x }) => x);
+        patch = { quotes, select_reason: v('qS') || null, quote_reason: v('qR') || null, memo_doc: md, memo_no: memoNo || null, attachments: [...(q.attachments || []), ...added] };
+        if (a === 'memo_draft') { log = `บันทึกร่างใบเสนอราคา ${quotes.length} ใบ / MEMO`; msg = 'บันทึกร่างแล้ว'; break; }
+        Object.assign(patch, { status: 'memo_approval', memo_approvers: apps, memo_step: 0, memo_round: (q.memo_round || 0) + 1, action_at: q.action_at || now, return_note: null });
+        const ch = quotes.find(x => x.chosen);
+        log = `ส่ง MEMO ${memoNo} ให้อนุมัติ · ${ch.vendor} ${num2(ch.amount)} บาท (เทียบ ${quotes.length} ราย): ${apps.map((e, i) => 'App' + (i + 1) + ' ' + nm(e)).join(' → ')}`; msg = 'ส่ง MEMO แล้ว'; break;
       }
       case 'memo_approve': {
         const last = q.memo_step + 1 >= q.memo_approvers.length;
@@ -1049,6 +1213,11 @@ function bind() {
   $$('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act));
   $$('[data-doc]').forEach(b => b.onclick = () => openDoc(b.dataset.doc));
   $$('[data-docdel]').forEach(b => b.onclick = () => delDoc(b.dataset.docdel, b));
+  $$('[data-memo]').forEach(b => b.onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) openMemo(q); });
+  $('#memoPrev') && ($('#memoPrev').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) previewMemo(q); });
+  $$('input[name=mdM]').forEach(r => r.onchange = () => { $('#mdSp').hidden = document.querySelector('input[name=mdM]:checked').value !== 'special'; });
+  $$('input[name=qC], [id^=qA]').forEach(el => { el.addEventListener('change', authHint); el.addEventListener('input', authHint); });
+  if ($('#authHint')) authHint();
   $('#qEdit') && ($('#qEdit').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) editForm(q); });
   $('#qDel') && ($('#qDel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) deleteForm(q); });
   $$('[data-scan]').forEach(a => a.onclick = e => { e.preventDefault(); openScan(a.dataset.scan); });

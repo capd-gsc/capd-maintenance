@@ -16,6 +16,7 @@ supabase/v3_auth.sql           ใช้งานจริง: Login Microsoft 3
 supabase/v3_trial_on.sql       โหมดทดลอง v3: เข้าด้วยอีเมลอย่างเดียว (ก่อน IT ตั้งค่า)
 supabase/v3_trial_off.sql      ปิดโหมดทดลอง
 supabase/v3_1_edit_delete.sql  ปุ่มแก้ไข / ลบใบงาน (ติดตั้ง setup_v3_trial.sql ก่อน 13 พ.ย. 2026 ให้รันไฟล์นี้เพิ่ม)
+supabase/v3_2_quotes_memo.sql  ตารางเทียบราคา Vendor + ฟอร์ม MEMO SC-F-0030 (ติดตั้งไว้ก่อนแล้ว ให้รันไฟล์นี้เพิ่ม)
 docs/IT-Microsoft-Login.md     ขั้นตอนที่ IT ต้องตั้งค่า (ส่งไฟล์นี้ให้ IT)
 supabase/functions/pmcal-reminders/  อีเมลเตือน PM/CAL รายวัน
 supabase/schedule_reminders.sql ตั้งเวลาส่งอีเมลทุกวัน 08:00
@@ -147,8 +148,8 @@ Admin ตั้งค่าเพิ่มให้ผู้ใช้แต่�
 
 **ระยะ 2**
 - คำขอซื้อ
-- ฟอร์ม MEMO พร้อมลายเซ็นในระบบ
-- เปรียบเทียบราคา Vendor
+- ~~ฟอร์ม MEMO (SC-F-0030) + เทียบราคา Vendor~~ เสร็จแล้ว (v3.2) · ลายเซ็นในระบบรอ Login Microsoft 365
+
 - คลังอะไหล่
 
 **ระยะ 3**

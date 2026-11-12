@@ -236,6 +236,13 @@ revoke select on public.pmcal_reminders from anon;
 revoke execute on function public.ensure_pmcal_jobs() from anon;
 
 -- ---------- 3. ตรวจสิทธิ์ทุกขั้นของใบงาน ----------
+-- ใบเสนอราคาเทียบราคา + ข้อมูลฟอร์ม MEMO (SC-F-0030) ในใบงาน
+alter table public.requests
+  add column if not exists quotes        jsonb not null default '[]',   -- [{vendor,no,amount,lead,valid,file,chosen}]
+  add column if not exists select_reason text,                          -- เหตุผลที่เลือก Vendor
+  add column if not exists quote_reason  text,                          -- เหตุผลที่มีใบเสนอราคาน้อยกว่า 3 ใบ
+  add column if not exists memo_doc      jsonb;                         -- ข้อมูลในแบบฟอร์ม MEMO
+
 create or replace function public.only_report_fields_changed(o public.requests, n public.requests) returns boolean
 language sql immutable as $$
   select (to_jsonb(n) - array['machine_no','symptom','first_fix','urgency','attachments','technician','updated_at'])
@@ -277,6 +284,14 @@ begin
   if sys or adm and new.status = old.status and new.memo_step = old.memo_step then return new; end if;
   if not public.cur_member() then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
   step_app := old.memo_approvers[old.memo_step + 1];
+  -- ส่ง MEMO แล้ว ใบเสนอราคาและ MEMO ถูกล็อก (แก้ได้อีกเมื่อถูกส่งกลับ หรือโดย Admin)
+  if old.status in ('memo_approval','po_vendor','closed') and (
+       new.quotes is distinct from old.quotes or new.memo_doc is distinct from old.memo_doc
+    or new.vendor is distinct from old.vendor or new.quotation_amount is distinct from old.quotation_amount
+    or new.memo_no is distinct from old.memo_no or new.memo_approvers is distinct from old.memo_approvers
+    or new.select_reason is distinct from old.select_reason) then
+    raise exception 'ใบเสนอราคาและ MEMO ถูกล็อกหลังส่งอนุมัติแล้ว';
+  end if;
 
   if new.status = old.status then
     -- อัปเดตข้อมูลโดยไม่เปลี่ยนขั้น
@@ -307,6 +322,18 @@ begin
   -- บันทึกผู้ทำรายการจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากหน้าเว็บ
   if old.status = 'pending_fd' and new.status <> 'returned' then new.approved_by := me; new.approved_at := now(); end if;
   if new.status = 'closed' then new.closed_by := me; new.end_at := coalesce(new.end_at, now()); end if;
+  -- ส่ง MEMO: Vendor และราคาในใบงานมาจากใบเสนอราคาที่เลือก · ผู้ขออนุมัติและวันที่บันทึกโดยระบบ
+  if new.status = 'memo_approval' and old.status <> 'memo_approval' then
+    if jsonb_array_length(coalesce(new.quotes, '[]')) > 0 then
+      new.vendor := null;
+      select x ->> 'vendor', (x ->> 'amount')::numeric into new.vendor, new.quotation_amount
+        from jsonb_array_elements(new.quotes) x where coalesce((x ->> 'chosen')::boolean, false) limit 1;
+      if new.vendor is null then raise exception 'เลือกใบเสนอราคาที่จะใช้'; end if;
+    end if;
+    if new.memo_doc is not null then
+      new.memo_doc := new.memo_doc || jsonb_build_object('from', me, 'date', to_char(now() at time zone 'Asia/Bangkok', 'YYYY-MM-DD'));
+    end if;
+  end if;
   if old.status = 'memo_approval' and new.status = 'po_vendor' and old.memo_step + 1 < coalesce(array_length(old.memo_approvers, 1), 0) then
     raise exception 'ยังมีผู้อนุมัติลำดับถัดไป';
   end if;
