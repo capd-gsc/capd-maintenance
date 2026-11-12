@@ -4,7 +4,7 @@
 - หน้าเว็บ: HTML/JS ล้วน โฮสต์บน GitHub Pages
 - ข้อมูลและไฟล์: Supabase
 
-เว็บ: https://phatphisut2011-svg.github.io/capd-maintenance/
+เว็บ: https://capd-gsc.github.io/capd-maintenance/
 
 ```
 index.html, css/, js/app.js    หน้าเว็บ
@@ -108,7 +108,7 @@ Admin ตั้งค่าเพิ่มให้ผู้ใช้แต่�
 3. **ตั้ง Secrets** ที่ **Edge Functions → Secrets**
    - `BREVO_API_KEY`
    - `MAIL_FROM` (อีเมลผู้ส่งที่ยืนยันแล้ว)
-   - `APP_URL` = `https://phatphisut2011-svg.github.io/capd-maintenance/`
+   - `APP_URL` = `https://capd-gsc.github.io/capd-maintenance/`
    - `CRON_SECRET` (ตั้งข้อความยาวๆ เอง)
 4. **ตั้งเวลาส่ง**
    - ที่ **Database → Extensions** เปิด `pg_cron` และ `pg_net`

@@ -4,7 +4,7 @@
 
 | รายการ | ค่า |
 |---|---|
-| หน้าเว็บ | https://phatphisut2011-svg.github.io/capd-maintenance/ |
+| หน้าเว็บ | https://capd-gsc.github.io/capd-maintenance/ |
 | ระบบยืนยันตัวตน | Supabase Auth (Azure provider) |
 | ผู้ใช้ | พนักงานแผนก CAPD ประมาณ 20–30 คน ที่ Admin ของระบบเพิ่มรายชื่อไว้ |
 | สิทธิ์ที่ขอ | เฉพาะการ Login (`openid`, `email`, `profile`, `User.Read`) ไม่อ่านอีเมล ไฟล์ หรือปฏิทิน |
@@ -53,8 +53,8 @@
    - กด **Save**
 2. **ตั้งค่า URL Configuration**
    - ไปที่ **Authentication → URL Configuration**
-   - **Site URL** = `https://phatphisut2011-svg.github.io/capd-maintenance/`
-   - **Redirect URLs:** เพิ่ม `https://phatphisut2011-svg.github.io/capd-maintenance/**`
+   - **Site URL** = `https://capd-gsc.github.io/capd-maintenance/`
+   - **Redirect URLs:** เพิ่ม `https://capd-gsc.github.io/capd-maintenance/**`
 3. **ตั้งค่าการสมัครผู้ใช้**
    - ที่ **Authentication → Sign In / Providers** ต้องเปิด **Allow new users to sign up**
    - ผู้ใช้ Microsoft จะถูกสร้างอัตโนมัติตอน Login ครั้งแรก
