@@ -7,5 +7,7 @@ window.APP_CONFIG = {
   APP_NAME: 'CAPD Maintenance',
   ORG: 'GSC · SCGC',
   // ทางสำรองระหว่างรอ IT ตั้งค่า Microsoft 365: true = แสดงช่อง "รับรหัสทางอีเมล" (ต้องเปิด Email provider + ตั้ง SMTP ใน Supabase)
-  EMAIL_OTP: false
+  EMAIL_OTP: false,
+  // โหมดทดลอง: true = เข้าด้วยการกรอกอีเมลอย่างเดียว (ต้องรัน supabase/v3_trial_on.sql) · ใช้จริงแล้วเปลี่ยนเป็น false และรัน v3_trial_off.sql
+  TRIAL_LOGIN: true
 };

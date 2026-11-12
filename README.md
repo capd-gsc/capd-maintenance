@@ -13,6 +13,8 @@ supabase/schema.sql            โครงฐานข้อมูล (รั�
 supabase/trial_open_access.sql โหมดทดลองเดิม (v3 ปิดให้แล้ว)
 supabase/v2_workflow.sql       Flow v2: Role ใหม่, งาน Normal/Special/PM-CAL
 supabase/v3_auth.sql           ใช้งานจริง: Login Microsoft 365, ผู้ใช้ (app_users), ตรวจสิทธิ์ทุกขั้นในฐานข้อมูล
+supabase/v3_trial_on.sql       โหมดทดลอง v3: เข้าด้วยอีเมลอย่างเดียว (ก่อน IT ตั้งค่า)
+supabase/v3_trial_off.sql      ปิดโหมดทดลอง
 docs/IT-Microsoft-Login.md     ขั้นตอนที่ IT ต้องตั้งค่า (ส่งไฟล์นี้ให้ IT)
 supabase/functions/pmcal-reminders/  อีเมลเตือน PM/CAL รายวัน
 supabase/schedule_reminders.sql ตั้งเวลาส่งอีเมลทุกวัน 08:00
@@ -24,10 +26,20 @@ supabase/schedule_reminders.sql ตั้งเวลาส่งอีเมล
 2. `trial_open_access.sql`
 3. `v2_workflow.sql`
 4. `v3_auth.sql`
+5. `v3_trial_on.sql` (ช่วงทดลองใช้ ก่อน IT ตั้งค่า Microsoft 365)
 
-ถ้ารันไฟล์ใดซ้ำภายหลัง ต้องรันไฟล์ที่ลำดับถัดไปตามจนถึง `v3_auth.sql` ทุกครั้ง
+ถ้ารันไฟล์ใดซ้ำภายหลัง ต้องรันไฟล์ที่ลำดับถัดไปตามทุกครั้ง
 
-> **รัน `v3_auth.sql` หลัง IT ตั้งค่า Microsoft 365 เสร็จ** เพราะเมื่อรันแล้ว การเข้าแบบกรอกอีเมลอย่างเดียว (โหมดทดลอง) จะใช้ไม่ได้ทันที
+### ช่วงทดลองใช้ → ใช้งานจริง
+| | ช่วงทดลอง (ตอนนี้) | ใช้งานจริง |
+|---|---|---|
+| ฐานข้อมูล | รัน `v3_trial_on.sql` | IT ตั้งค่าเสร็จ → รัน `v3_trial_off.sql` |
+| `js/config.js` | `TRIAL_LOGIN: true` | `TRIAL_LOGIN: false` |
+| เข้าระบบ | กรอกอีเมลในรายชื่ออย่างเดียว (มีป้าย "โหมดทดลอง" ที่หัวเว็บ) | Microsoft 365 |
+| สิทธิ์ / Flow | ตรวจในฐานข้อมูลเหมือนจริงทุกขั้น | เหมือนเดิม |
+
+ช่วงทดลอง ใครรู้อีเมลคนอื่นก็เข้าในนามคนนั้นได้ ห้ามใส่ข้อมูลลับ
+ถ้าต้องการล้างใบงานทดลองก่อนใช้จริง ให้รันใน SQL Editor: `truncate public.request_logs, public.requests;`
 
 ## เข้าระบบ
 - กด **เข้าสู่ระบบด้วย Microsoft 365** แล้ว Login ด้วยบัญชี @scg.com

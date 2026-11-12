@@ -4,8 +4,10 @@
 (() => {
 'use strict';
 const C = window.APP_CONFIG;
-const SCAN_KEY = 'capd-pending-machine';
-const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
+const SCAN_KEY = 'capd-pending-machine', TRIAL_KEY = 'capd-trial-user';
+// โหมดทดลอง (ก่อน IT ตั้งค่า Microsoft 365): ส่งอีเมลที่กรอกไปใน header ให้ฐานข้อมูลใช้แทน Login จริง (supabase/v3_trial_on.sql)
+let TRIAL_USER = null; try { if (C.TRIAL_LOGIN) TRIAL_USER = localStorage.getItem(TRIAL_KEY); } catch (e) {}
+const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }, global: { headers: TRIAL_USER ? { 'x-capd-user': TRIAL_USER } : {} } });
 
 /* ---------- constants ---------- */
 const OPT = {
@@ -180,7 +182,11 @@ async function uploadFiles(prefix, kind, files) {
 const filesOf = id => $('#' + id)?.files || [];
 
 /* =================== LOGIN (Microsoft 365 ผ่าน Supabase Auth) =================== */
-async function logout() { S.me = null; try { await sb.auth.signOut(); } catch (e) {} }
+async function logout(restart = true) {
+  S.me = null; try { await sb.auth.signOut(); } catch (e) {}
+  try { localStorage.removeItem(TRIAL_KEY); } catch (e) {}
+  if (TRIAL_USER && restart) { location.replace(backUrl()); await new Promise(() => {}); }   // โหลดหน้าใหม่เพื่อล้าง header ของผู้ใช้เดิม
+}
 const backUrl = () => location.origin + location.pathname;
 function urlAuthError() {
   const h = new URLSearchParams(location.hash.slice(1)), q = new URLSearchParams(location.search);
@@ -203,12 +209,25 @@ function renderLogin(msg = '') {
       <div class="field" id="otpBox" hidden><label for="enCode">รหัสจากอีเมล</label><input id="enCode" class="inp" inputmode="numeric" autocomplete="one-time-code" maxlength="10"></div>
       <button class="btn ghost" type="submit" id="bOtp">ส่งรหัสไปที่อีเมล</button>
     </form>` : ''}
+    ${C.TRIAL_LOGIN ? `<div class="or"><span>โหมดทดลอง · กรอกอีเมลอย่างเดียว</span></div>
+    <form id="fTrial" style="display:flex;flex-direction:column;gap:10px">
+      <div class="field"><label for="trEmail">อีเมลบริษัท</label><input id="trEmail" class="inp" type="email" autocomplete="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required></div>
+      <button class="btn" type="submit">เข้าสู่ระบบ (ทดลอง)</button>
+    </form>` : ''}
     <p class="sub" style="margin:0">ใช้บัญชีอีเมลบริษัทที่ Admin เพิ่มไว้ในระบบเท่านั้น · ยังไม่มีสิทธิ์? ติดต่อ Admin</p>
   </div></div>`;
   $('#bMs').onclick = async () => {
     $('#bMs').disabled = true;
     const { error } = await sb.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'openid email profile', redirectTo: backUrl() } });
     if (error) { $('#bMs').disabled = false; renderLogin('เปิดหน้า Microsoft ไม่ได้: ' + error.message); }
+  };
+  const ft = $('#fTrial');
+  if (ft) ft.onsubmit = e => {
+    e.preventDefault();
+    const em = $('#trEmail').value.trim().toLowerCase();
+    if (!domainOk(em)) return renderLogin('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
+    try { localStorage.setItem(TRIAL_KEY, em); } catch (x) { return renderLogin('เบราว์เซอร์นี้บันทึกข้อมูลไม่ได้ ลองปิดโหมดไม่ระบุตัวตน'); }
+    location.replace(backUrl() + location.search);
   };
   const f = $('#fOtp');
   if (f) f.onsubmit = async e => {
@@ -234,10 +253,10 @@ async function enter(session) {
   entering = true;
   try {
     const em = (session.user.email || '').toLowerCase();
-    if (!domainOk(em)) { await logout(); return renderLogin('ใช้ได้เฉพาะบัญชี @' + C.ALLOWED_DOMAIN + (em ? ' (คุณเข้าด้วย ' + em + ')' : '')); }
+    if (!domainOk(em)) { await logout(false); return renderLogin('ใช้ได้เฉพาะบัญชี @' + C.ALLOWED_DOMAIN + (em ? ' (คุณเข้าด้วย ' + em + ')' : '')); }
     try { await loadAll(); } catch (e) { return renderLogin('เชื่อมต่อฐานข้อมูลไม่ได้: ' + (e.message || e)); }
     const u = D.profiles.find(x => x.email === em && x.active !== false);
-    if (!u) { await logout(); return renderLogin('บัญชี ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin'); }
+    if (!u) { await logout(false); return renderLogin('บัญชี ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin'); }
     S.me = u;
     await afterLogin();
   } finally { entering = false; }
@@ -254,6 +273,7 @@ function render() {
   <header class="top"><div class="top-in">
     <nav class="topnav">${[['home', 'หน้าหลัก'], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ'], ['cal', 'PM / CAL'], ['report', 'รายงาน']].map(([k, l]) => `<button data-nav="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <div class="sp"></div>
+    ${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}
     <div class="who">${IC.user}<span class="nm">${esc(S.me.full_name || S.me.email)} · ${esc(roleText(S.me))}</span></div>
     <button class="iconbtn k2-orange" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
     <button class="iconbtn k2-cyan" id="refresh" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">${IC.clock}</button>
@@ -1034,7 +1054,9 @@ async function boot() {
     else if (ev === 'SIGNED_OUT' && S.me) { S.me = null; renderLogin('ออกจากระบบแล้ว'); }
   });
   const { data } = await sb.auth.getSession();
-  if (data?.session && !err) await enter(data.session); else if (!S.me) renderLogin(err);
+  if (data?.session && !err) await enter(data.session);
+  else if (TRIAL_USER) await enter({ user: { email: TRIAL_USER } });
+  else if (!S.me) renderLogin(err);
 }
 boot();
 })();
