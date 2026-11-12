@@ -2,3 +2,4 @@
 *.log
 node_modules/
 *.zip
+*.local.sql

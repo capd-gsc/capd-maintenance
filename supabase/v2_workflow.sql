@@ -19,9 +19,6 @@ alter table public.role_presets add constraint role_presets_role_check
   check (role in ('member','foreman_shift','foreman_day','manager','admin'));
 alter table public.role_presets add column if not exists full_name text;
 alter table public.role_presets add column if not exists memo_approver boolean not null default false;
--- ผู้อนุมัติ MEMO ตั้งต้น ตามชีท ตัวเลือก (Manager App)
-update public.role_presets set memo_approver = true
-  where email in ('user08@scg.com','user01@scg.com') and not memo_approver;
 
 -- ---------- 2. ใบงาน: คอลัมน์ใหม่ ----------
 alter table public.requests

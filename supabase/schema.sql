@@ -18,12 +18,7 @@ create table if not exists public.role_presets (
   email text primary key,
   role  public.app_role not null
 );
-insert into public.role_presets(email, role) values
-  ('user01@scg.com','admin'),
-  ('user08@scg.com','approver'),
-  ('user14@scg.com','tech'),
-  ('user21@scg.com','tech')
-on conflict (email) do nothing;
+-- รายชื่อผู้ใช้ไม่เก็บใน GitHub · v3 ใช้ตาราง app_users (ดู v3_auth.sql)
 
 create table if not exists public.profiles (
   id         uuid primary key references auth.users(id) on delete cascade,

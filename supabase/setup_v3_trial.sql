@@ -1,6 +1,7 @@
 -- ============================================================
 -- CAPD Maintenance: ติดตั้งระบบ v3 + โหมดทดลอง (ไฟล์เดียว รันซ้ำได้)
 -- รวม v2_workflow.sql + v3_auth.sql + v3_trial_on.sql
+-- ติดตั้งใหม่: รัน users_seed.local.sql (เก็บไว้กับ Admin) ต่อจากไฟล์นี้
 -- ============================================================
 
 -- >>>>>>>>>> v2_workflow.sql
@@ -25,9 +26,6 @@ alter table public.role_presets add constraint role_presets_role_check
   check (role in ('member','foreman_shift','foreman_day','manager','admin'));
 alter table public.role_presets add column if not exists full_name text;
 alter table public.role_presets add column if not exists memo_approver boolean not null default false;
--- ผู้อนุมัติ MEMO ตั้งต้น ตามชีท ตัวเลือก (Manager App)
-update public.role_presets set memo_approver = true
-  where email in ('user08@scg.com','user01@scg.com') and not memo_approver;
 
 -- ---------- 2. ใบงาน: คอลัมน์ใหม่ ----------
 alter table public.requests
@@ -154,29 +152,9 @@ create table if not exists public.app_users (
   created_at     timestamptz not null default now()
 );
 
-insert into public.app_users(email, full_name, role, fd_type, is_admin, memo_approver) values
-  ('user01@scg.com','User 01','member',null,true,false),
-  ('user02@scg.com','User 02','foreman_day','เครื่องจักร',false,false),
-  ('user03@scg.com','User 03','foreman_day','เครื่องทดสอบ',false,false),
-  ('user04@scg.com','User 04','foreman_day',null,false,false),
-  ('user05@scg.com','User 05','foreman_shift',null,false,false),
-  ('user06@scg.com','User 06','foreman_shift',null,false,false),
-  ('user07@scg.com','User 07','foreman_shift',null,false,false),
-  ('user08@scg.com','User 08','foreman_shift',null,false,false),
-  ('user09@scg.com','User 09','manager',null,false,true),
-  ('user10@scg.com','User 10','manager',null,false,true),
-  ('user11@scg.com','User 11','member',null,false,false),
-  ('user12@scg.com','User 12','member',null,false,false),
-  ('user13@scg.com','User 13','member',null,false,false),
-  ('user14@scg.com','User 14','member',null,false,false),
-  ('user15@scg.com','User 15','member',null,false,false),
-  ('user16@scg.com','User 16','member',null,false,false),
-  ('user17@scg.com','User 17','member',null,false,false),
-  ('user18@scg.com','User 18','member',null,false,false),
-  ('user19@scg.com','User 19','member',null,false,false),
-  ('user20@scg.com','User 20','member',null,false,false),
-  ('user21@scg.com','User 21','member',null,false,false)
-on conflict (email) do nothing;
+-- รายชื่อผู้ใช้ไม่เก็บใน GitHub (repo เป็น Public)
+-- ติดตั้งใหม่: รันไฟล์ users_seed.local.sql ที่ Admin เก็บไว้ หรือเพิ่ม Admin คนแรกด้วยคำสั่งนี้ แล้วนำเข้าผู้ใช้จาก Excel ในหน้าเว็บ
+--   insert into public.app_users(email, full_name, role, is_admin) values ('ชื่อ@scg.com', 'ชื่อ นามสกุล', 'member', true);
 
 -- helpers (security definer: อ่าน app_users ได้แม้ RLS ปิดกั้น)
 create or replace function public.cur_user() returns public.app_users
