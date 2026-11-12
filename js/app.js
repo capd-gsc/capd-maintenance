@@ -368,7 +368,7 @@ const VIEWS = {
     const q = D.requests.find(x => x.id === S.sel); if (!q) return '<div class="empty">ไม่พบรายการ</div>';
     const m = M(q.machine_no);
     const kv = (k, v) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}</dd>`;
-    const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => /\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`).join('')}</div>` : ''; }).join('') : '';
+    const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => `<span class="attw">${/\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`}${canRemoveAtt(q, x) ? `<button class="attx" data-attdel="${esc(x.path)}" title="ลบไฟล์ ${esc(x.name)}" aria-label="ลบไฟล์ ${esc(x.name)}">×</button>` : ''}</span>`).join('')}</div>` : ''; }).join('') : '';
     return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
     ${stepsHtml(q)}
     <div class="detail">
@@ -615,7 +615,7 @@ function quoteRows(q) {
     <td><input class="inp" id="qA${i}" type="number" min="0" step="0.01" value="${x.amount ?? ''}" aria-label="ราคา ${i + 1}"></td>
     <td><input class="inp" id="qL${i}" type="number" min="0" value="${x.lead ?? ''}" aria-label="ส่งของ ${i + 1}"></td>
     <td><input class="inp" id="qX${i}" type="date" value="${esc(x.valid || '')}" aria-label="ยืนราคาถึง ${i + 1}"></td>
-    <td>${x.file ? `<a class="file" href="${esc(attUrl(x.file) || '#')}" target="_blank" rel="noopener">แนบแล้ว</a><br>` : ''}<input class="inp" id="qF${i}" type="file" aria-label="ไฟล์ใบเสนอราคา ${i + 1}"></td></tr>`; }).join('')}</tbody></table></div>
+    <td>${x.file ? `<span class="attw"><a class="file" href="${esc(attUrl(x.file) || '#')}" target="_blank" rel="noopener">แนบแล้ว</a><button class="attx" type="button" data-attdel="${esc(x.file)}" title="ลบไฟล์ใบเสนอราคาแถว ${i + 1}" aria-label="ลบไฟล์ใบเสนอราคาแถว ${i + 1}">×</button></span><br>` : ''}<input class="inp" id="qF${i}" type="file" aria-label="ไฟล์ใบเสนอราคา ${i + 1}"></td></tr>`; }).join('')}</tbody></table></div>
   <span class="hint">พิมพ์ชื่อ Vendor ใหม่ได้ · แนะนำ 3 ใบ · วิธี “เปรียบเทียบราคา” ต้องมีอย่างน้อย 2 ราย · ใบที่เลือกต้องแนบไฟล์</span>`;
 }
 function memoDefaults(q) {
@@ -1147,6 +1147,31 @@ function exportRequests() {
   XLSX.writeFile(wb, 'CAPD-Maintenance-' + todayStr() + '.xlsx');
 }
 
+/* ---------- ลบไฟล์แนบ ---------- */
+// คนที่แนบไฟล์ลบได้ระหว่างขั้นตอนของตัวเอง · Admin ลบได้ทุกเวลา · ไฟล์ใบเสนอราคา/MEMO ล็อกหลังส่ง MEMO
+function canRemoveAtt(q, a) {
+  if (isAdmin()) return true;
+  const me = S.me.email; if (!OPEN(q.status) || (a.by && a.by !== me) || (!a.by && q.reporter !== me)) return false;
+  if (['pending_fd', 'returned'].includes(q.status)) return q.reporter === me;
+  if (['quotation', 'memo_rejected'].includes(q.status)) return q.assignee === me || role() === 'foreman_day';
+  if (q.status === 'po_vendor') return !['quotation', 'memo'].includes(a.kind) && (q.assignee === me || canFD(q.machine_no));
+  return false;
+}
+async function removeAtt(path, btn) {
+  const q = D.requests.find(x => x.id === S.sel); if (!q) return;
+  const a = S.att.find(x => x.path === path) || (q.attachments || []).find(x => x.path === path) || { path, name: path.split('/').pop() };
+  if (btn.dataset.sure !== '1') { btn.dataset.sure = '1'; btn.textContent = 'ลบ?'; btn.classList.add('sure'); setTimeout(() => { if (document.body.contains(btn)) { btn.dataset.sure = ''; btn.textContent = '×'; btn.classList.remove('sure'); } }, 4000); return; }
+  btn.disabled = true;
+  const patch = { attachments: (q.attachments || []).filter(x => x.path !== path) };
+  if ((q.photos || []).includes(path)) patch.photos = q.photos.filter(x => x !== path);
+  if ((q.quotes || []).some(x => x.file === path)) patch.quotes = q.quotes.map(x => x.file === path ? { ...x, file: null } : x);
+  const { error } = await sb.from('requests').update(patch).eq('id', q.id);
+  if (error) { btn.disabled = false; return fail(error); }
+  if (isAdmin()) { try { await sb.storage.from('request-photos').remove([path]); } catch (x) { /* ไฟล์ค้างไม่กระทบการใช้งาน */ } }
+  await addLog(q.id, `ลบไฟล์แนบ (${ATT[a.kind] || 'ไฟล์'}): ${a.name}`);
+  toast('ลบไฟล์แล้ว'); await loadAll(); openDetail(q.id, false);
+}
+
 /* ---------- แก้ไข / ลบใบงาน ---------- */
 // ผู้เปิดใบงานแก้ข้อมูลแจ้งซ่อมได้จนกว่า FD จะอนุมัติ · Admin แก้ได้ทุกสถานะ (ฐานข้อมูลตรวจซ้ำใน guard_request)
 const canEdit = q => isAdmin() || (q.reporter === S.me.email && ['pending_fd', 'returned'].includes(q.status));
@@ -1213,6 +1238,7 @@ function bind() {
   $$('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act));
   $$('[data-doc]').forEach(b => b.onclick = () => openDoc(b.dataset.doc));
   $$('[data-docdel]').forEach(b => b.onclick = () => delDoc(b.dataset.docdel, b));
+  $$('[data-attdel]').forEach(b => b.onclick = e => { e.preventDefault(); removeAtt(b.dataset.attdel, b); });
   $$('[data-memo]').forEach(b => b.onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) openMemo(q); });
   $('#memoPrev') && ($('#memoPrev').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) previewMemo(q); });
   $$('input[name=mdM]').forEach(r => r.onchange = () => { $('#mdSp').hidden = document.querySelector('input[name=mdM]:checked').value !== 'special'; });

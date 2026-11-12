@@ -324,3 +324,7 @@ tr.chosen td{background:var(--ok-bg)}
   body.printing-memo .noprint{display:none !important}
   .memo-doc{border-width:1px}
 }
+
+.attw{position:relative;display:inline-flex;align-items:flex-start}
+.attx{margin-left:-1px;border:1px solid var(--line);background:#fff;color:var(--bad);font-weight:700;min-width:28px;height:28px;cursor:pointer;line-height:1;padding:0 6px}
+.attx:hover,.attx.sure{background:var(--bad);color:#fff;border-color:var(--bad)}
