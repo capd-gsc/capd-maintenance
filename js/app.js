@@ -1,19 +1,21 @@
-/* CAPD Maintenance v2 — frontend (vanilla JS + Supabase)
+/* CAPD Maintenance v3 — frontend (vanilla JS + Supabase, Login ด้วย Microsoft 365)
+   สิทธิ์จริงตรวจในฐานข้อมูล (supabase/v3_auth.sql) หน้าเว็บแค่ซ่อน/แสดงปุ่มให้ตรงกัน
    Flow: แก้ไขเอง / Normal (RMT-SAP, FM-K2) / Special (ใบเสนอราคา → MEMO → Manager App → PO / Vendor) / PM-CAL */
 (() => {
 'use strict';
 const C = window.APP_CONFIG;
-const USER_KEY = 'capd-current-user';
-const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY);
+const SCAN_KEY = 'capd-pending-machine';
+const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } });
 
 /* ---------- constants ---------- */
 const OPT = {
-  type: ['เครื่องจักร', 'เครื่องทดสอบ', 'อื่นๆ'],
+  type: ['เครื่องจักร', 'เครื่องทดสอบ', 'Mold', 'อื่นๆ'],
+  fdType: ['เครื่องจักร', 'เครื่องทดสอบ'],
   loc: ['Extruder Area (Line 91)', 'Extruder Area (Line 98,96,95,92)', 'Injection Area MTD', 'Injection Area COD', 'Office Area MTD', 'Office Area COD', 'Stock Area R/M', 'Stock Area FG AMD', 'Testing Room 1', 'Testing Room 2', 'TD Lab Room 3', 'Weighing Room'],
   mstatus: ['Active', 'Maintenance', 'Inactive'],
   prio: ['Critical', 'High', 'Normal'],
   mtype: ['PM', 'CAL', 'PM & CAL', 'No Plan'],
-  interval: [6, 12, 24],
+  interval: [3, 6, 12, 24],
   docKind: ['คู่มือ PDF', 'SOP/WI', 'Drawing', 'วิดีโอ', 'วิธีแก้ปัญหาเบื้องต้น', 'Certificate', 'อื่นๆ']
 };
 const ROLES = { member: 'Member', foreman_shift: 'Foreman Shift', foreman_day: 'Foreman Day', manager: 'Manager', admin: 'Admin' };
@@ -41,6 +43,7 @@ const IC = {
 
 /* ---------- state ---------- */
 let PENDING_M = new URLSearchParams(location.search).get('m');
+try { if (PENDING_M) sessionStorage.setItem(SCAN_KEY, PENDING_M); else PENDING_M = sessionStorage.getItem(SCAN_KEY); } catch (e) {}
 const S = { me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
 const D = { machines: [], requests: [], profiles: [], docs: [] };
 
@@ -63,17 +66,27 @@ const M = no => D.machines.find(m => m.machine_no === no) || {};
 const nm = e => { if (!e) return '-'; if (e === 'system') return 'ระบบ (PM/CAL อัตโนมัติ)'; const p = D.profiles.find(x => x.email === e); return p?.full_name || String(e).split('@')[0]; };
 const pill = s => `<span class="pill ${SCLS[s] || ''}">${esc(SL[s] || s)}</span>`;
 const role = () => S.me?.role || 'member';
-const is = (...rs) => rs.includes(role());
-const isAdmin = () => role() === 'admin';
+const isAdmin = () => role() === 'admin' || !!S.me?.is_admin;            // บทบาท Admin หรือ ติ๊กสิทธิ์ Admin
+const is = (...rs) => rs.includes(role()) || (rs.includes('admin') && isAdmin());
+const roleText = u => (ROLES[u?.role] || u?.role || '') + (u?.is_admin && u.role !== 'admin' ? ' + Admin' : '') + (u?.role === 'foreman_day' ? ' (' + (u.fd_type || 'สำรองทุกประเภท') + ')' : '');
+// Foreman Day ตามประเภทเครื่อง: เครื่องทดสอบ → FD เครื่องทดสอบ, อื่นๆ (เครื่องจักร / Mold / อื่นๆ) → FD เครื่องจักร (ตรงกับ public.fd_for)
+const fdTypeOf = no => M(no).machine_type === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร';
+const fdOfType = t => D.profiles.find(p => p.role === 'foreman_day' && p.active !== false && p.fd_type === t)?.email || null;
+const fdFor = no => fdOfType(fdTypeOf(no));
+// FD ทุกคนของประเภทนั้น (ไม่มี → FD สำรองที่ไม่ระบุประเภท) ตรงกับ public.fds_for
+const fdsFor = no => { const t = fdTypeOf(no), a = usersBy('foreman_day'); const x = a.filter(p => p.fd_type === t); return (x.length ? x : a.filter(p => !p.fd_type)).map(p => p.email); };
+const canFD = no => isAdmin() || (role() === 'foreman_day' && (!S.me.fd_type || S.me.fd_type === fdTypeOf(no)));
 const isFD = () => is('foreman_day', 'admin');
 const canCreate = () => is('member', 'foreman_shift', 'foreman_day', 'admin');
-const usersBy = (...rs) => D.profiles.filter(p => rs.includes(p.role));
-const memoApprovers = () => D.profiles.filter(p => p.memo_approver);
+const activeUsers = () => D.profiles.filter(p => p.active !== false);
+const usersBy = (...rs) => activeUsers().filter(p => rs.includes(p.role));
+const memoApprovers = () => activeUsers().filter(p => p.memo_approver);
+const addMonths = (d, n) => { const [y, m, dd] = String(d).slice(0, 10).split('-').map(Number); const t = new Date(Date.UTC(y, m - 1 + Number(n), 1)); const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate(); t.setUTCDate(Math.min(dd, last)); return t.toISOString().slice(0, 10); };
 function toast(t) { $$('.toast').forEach(x => x.remove()); const d = document.createElement('div'); d.className = 'toast'; d.textContent = t; document.body.appendChild(d); setTimeout(() => d.remove(), 3000); }
 function fail(e) { console.error(e); toast('ผิดพลาด: ' + (e?.message || e)); }
 const domainOk = e => new RegExp('^[^@\\s]+@' + C.ALLOWED_DOMAIN.replace('.', '\\.') + '$', 'i').test(e);
 const opts = (arr, sel) => arr.map(v => `<option ${String(v) === String(sel ?? '') ? 'selected' : ''}>${esc(v)}</option>`).join('');
-const userOpts = (list, sel, blank) => (blank ? `<option value="">${blank}</option>` : '') + list.map(u => `<option value="${esc(u.email)}" ${u.email === sel ? 'selected' : ''}>${esc(u.full_name || u.email)} · ${ROLES[u.role] || u.role}</option>`).join('');
+const userOpts = (list, sel, blank) => (blank ? `<option value="">${blank}</option>` : '') + list.map(u => `<option value="${esc(u.email)}" ${u.email === sel ? 'selected' : ''}>${esc(u.full_name || u.email)} · ${esc(roleText(u))}</option>`).join('');
 function jobType(q) {
   if (q.job_type === 'normal') return 'Normal · ' + (q.repair_unit || '-');
   if (q.job_type === 'special') return 'Special';
@@ -85,10 +98,9 @@ function jobType(q) {
 /* ---------- who acts next ---------- */
 function owner(q) {
   switch (q.status) {
-    case 'pending_fd': return { roles: ['foreman_day'], emails: [] };
+    case 'pending_fd': case 'ext_repair': { const f = fdsFor(q.machine_no); return f.length ? { roles: [], emails: f } : { roles: ['foreman_day'], emails: [] }; }
     case 'returned': return { roles: [], emails: [q.reporter] };
     case 'wait_admin': return { roles: ['admin'], emails: [] };
-    case 'ext_repair': return { roles: ['foreman_day'], emails: [] };
     case 'quotation': case 'memo_rejected': return { roles: [], emails: [q.assignee] };
     case 'memo_approval': return { roles: [], emails: [q.memo_approvers[q.memo_step]] };
     case 'po_vendor': return { roles: q.po_no ? [] : ['admin'], emails: [q.assignee] };
@@ -96,41 +108,40 @@ function owner(q) {
   }
 }
 const ownerText = q => { const o = owner(q); return [...o.roles.map(r => ROLES[r]), ...o.emails.filter(Boolean).map(nm)].join(' + ') || '-'; };
-const isMine = q => { const o = owner(q); return o.emails.includes(S.me.email) || o.roles.includes(role()); };
+const isMine = q => { const o = owner(q); return o.emails.includes(S.me.email) || o.roles.includes(role()) || (o.roles.includes('admin') && isAdmin()); };
 
 /* ---------- data ---------- */
 async function loadAll() {
   const [m, r, p, d] = await Promise.all([
     sb.from('machines').select('*').order('machine_no'),
     sb.from('requests').select('*').order('created_at', { ascending: false }),
-    sb.from('role_presets').select('*').order('email'),
+    sb.from('app_users').select('*').order('email'),
     sb.from('documents').select('*').order('created_at', { ascending: false })
   ]);
   for (const x of [m, r, p, d]) if (x.error) throw x.error;
   D.machines = m.data; D.requests = r.data; D.docs = d.data;
-  D.profiles = p.data.map(x => ({ ...x, id: x.email }));
+  D.profiles = p.data;
 }
 async function reload() {
   try {
     await loadAll();
-    if (S.me) { const u = D.profiles.find(x => x.email === S.me.email); if (!u) { logoutLocal(); return renderLogin('สิทธิ์ใช้งานของคุณถูกนำออกแล้ว'); } S.me = u; }
+    if (S.me) { const u = D.profiles.find(x => x.email === S.me.email && x.active !== false); if (!u) { await logout(); return renderLogin('สิทธิ์ใช้งานของคุณถูกนำออกแล้ว'); } S.me = u; }
     if (S.view === 'detail') return openDetail(S.sel, false);
     render();
   } catch (e) { fail(e); }
 }
 const addLog = (id, action) => sb.from('request_logs').insert({ request_id: id, action, actor: S.me.email });
 
-// Admin sees every open job; everyone else sees jobs waiting on them
-function myTasks() { return D.requests.filter(q => OPEN(q.status) && (isAdmin() || isMine(q))); }
+// งานของฉัน = เฉพาะใบงานที่รอให้ฉันดำเนินการ (Admin ดูทั้งหมดได้ที่หน้าใบงาน)
+function myTasks() { return D.requests.filter(q => OPEN(q.status) && isMine(q)); }
 function planList() {
   const out = [], today = new Date(); today.setHours(0, 0, 0, 0);
   for (const m of D.machines) {
     if (m.status === 'Inactive') continue;
     for (const [kind, last, iv] of [['PM', m.pm_last_date, m.pm_interval_month], ['CAL', m.cal_last_date, m.cal_interval_month]]) {
       if (!last || !iv) continue;
-      const n = new Date(last); n.setMonth(n.getMonth() + Number(iv));
-      const next = n.getFullYear() + '-' + pad(n.getMonth() + 1) + '-' + pad(n.getDate());
-      out.push({ m, kind, last, iv, next, days: Math.round((n - today) / 864e5), job: D.requests.find(q => q.job_type === 'pmcal' && q.machine_no === m.machine_no && q.pmcal_kind === kind && q.due_date === next) });
+      const next = addMonths(last, iv);
+      out.push({ m, kind, last, iv, next, days: daysLeft(next), job: D.requests.find(q => q.job_type === 'pmcal' && q.machine_no === m.machine_no && q.pmcal_kind === kind && q.due_date === next) });
     }
   }
   return out.sort((a, b) => a.days - b.days);
@@ -140,7 +151,8 @@ const tierOf = d => d <= 30 ? 3 : d <= 60 ? 2 : 1;
 function myReminders() {
   return D.requests.filter(q => q.job_type === 'pmcal' && !q.action_at && OPEN(q.status) && q.due_date).filter(q => {
     const t = tierOf(daysLeft(q.due_date));
-    return isAdmin() || q.assignee === S.me.email || (t >= 2 && role() === 'foreman_day') || (t >= 3 && role() === 'manager');
+    const fdOk = fdsFor(q.machine_no).includes(S.me.email);
+    return isAdmin() || q.assignee === S.me.email || (t >= 2 && fdOk) || (t >= 3 && role() === 'manager');
   });
 }
 
@@ -167,44 +179,82 @@ async function uploadFiles(prefix, kind, files) {
 }
 const filesOf = id => $('#' + id)?.files || [];
 
-/* =================== LOGIN (email allowlist, no password) =================== */
-function logoutLocal() { S.me = null; try { localStorage.removeItem(USER_KEY); } catch (e) {} }
+/* =================== LOGIN (Microsoft 365 ผ่าน Supabase Auth) =================== */
+async function logout() { S.me = null; try { await sb.auth.signOut(); } catch (e) {} }
+const backUrl = () => location.origin + location.pathname;
+function urlAuthError() {
+  const h = new URLSearchParams(location.hash.slice(1)), q = new URLSearchParams(location.search);
+  const e = h.get('error_description') || q.get('error_description') || h.get('error') || q.get('error');
+  if (e) try { history.replaceState(null, '', location.pathname); } catch (x) {}
+  if (!e) return '';
+  return /domain|@/i.test(e) ? 'ใช้ได้เฉพาะบัญชี @' + C.ALLOWED_DOMAIN : 'เข้าสู่ระบบไม่สำเร็จ: ' + e.replace(/\+/g, ' ');
+}
 function renderLogin(msg = '') {
+  const otp = !!C.EMAIL_OTP;
   $('#app').innerHTML = `<div class="login"><div class="login-card">
     <div class="login-band">เข้าสู่ระบบ</div>
     <div class="k2logo">${LOGO}<span>CAPD <b>MAINTENANCE</b></span></div>
     <p class="sub" style="margin:0">${esc(C.ORG)} · ระบบแจ้งซ่อมและบำรุงรักษา</p>
-    <form id="fEnter" style="display:flex;flex-direction:column;gap:12px">
+    ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
+    <button class="btn ms" id="bMs" type="button"><svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> เข้าสู่ระบบด้วย Microsoft 365 (@${esc(C.ALLOWED_DOMAIN)})</button>
+    ${otp ? `<div class="or"><span>หรือ รับรหัสทางอีเมล</span></div>
+    <form id="fOtp" style="display:flex;flex-direction:column;gap:10px">
       <div class="field"><label for="enEmail">อีเมลบริษัท</label><input id="enEmail" class="inp" type="email" autocomplete="email" placeholder="name@${esc(C.ALLOWED_DOMAIN)}" required></div>
-      ${msg ? `<div class="err">${esc(msg)}</div>` : ''}
-      <button class="btn" type="submit">เข้าสู่ระบบ</button>
-    </form>
-    <p class="sub" style="margin:0">ยังไม่มีสิทธิ์ใช้งาน? ติดต่อ Admin เพื่อเพิ่มอีเมลของคุณ</p>
+      <div class="field" id="otpBox" hidden><label for="enCode">รหัสจากอีเมล</label><input id="enCode" class="inp" inputmode="numeric" autocomplete="one-time-code" maxlength="10"></div>
+      <button class="btn ghost" type="submit" id="bOtp">ส่งรหัสไปที่อีเมล</button>
+    </form>` : ''}
+    <p class="sub" style="margin:0">ใช้บัญชีอีเมลบริษัทที่ Admin เพิ่มไว้ในระบบเท่านั้น · ยังไม่มีสิทธิ์? ติดต่อ Admin</p>
   </div></div>`;
-  $('#fEnter').onsubmit = async e => {
+  $('#bMs').onclick = async () => {
+    $('#bMs').disabled = true;
+    const { error } = await sb.auth.signInWithOAuth({ provider: 'azure', options: { scopes: 'openid email profile', redirectTo: backUrl() } });
+    if (error) { $('#bMs').disabled = false; renderLogin('เปิดหน้า Microsoft ไม่ได้: ' + error.message); }
+  };
+  const f = $('#fOtp');
+  if (f) f.onsubmit = async e => {
     e.preventDefault();
     const em = $('#enEmail').value.trim().toLowerCase();
     if (!domainOk(em)) return renderLogin('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
-    try { await loadAll(); } catch (err) { return fail(err); }
-    const u = D.profiles.find(x => x.email === em);
-    if (!u) return renderLogin('อีเมล ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin');
-    S.me = u; try { localStorage.setItem(USER_KEY, u.email); } catch (err) {}
-    await afterLogin();
+    $('#bOtp').disabled = true;
+    if ($('#otpBox').hidden) {
+      const { error } = await sb.auth.signInWithOtp({ email: em, options: { shouldCreateUser: true, emailRedirectTo: backUrl() } });
+      $('#bOtp').disabled = false;
+      if (error) return toast('ส่งรหัสไม่สำเร็จ: ' + error.message);
+      $('#otpBox').hidden = false; $('#enEmail').readOnly = true; $('#bOtp').textContent = 'ยืนยันรหัส'; $('#enCode').focus(); toast('ส่งรหัสไปที่ ' + em + ' แล้ว');
+    } else {
+      const { error } = await sb.auth.verifyOtp({ email: em, token: $('#enCode').value.trim(), type: 'email' });
+      $('#bOtp').disabled = false;
+      if (error) return toast('รหัสไม่ถูกต้องหรือหมดอายุ');
+    }
   };
+}
+let entering = false;
+async function enter(session) {
+  if (entering || (S.me && S.me.email === (session.user.email || '').toLowerCase())) return;
+  entering = true;
+  try {
+    const em = (session.user.email || '').toLowerCase();
+    if (!domainOk(em)) { await logout(); return renderLogin('ใช้ได้เฉพาะบัญชี @' + C.ALLOWED_DOMAIN + (em ? ' (คุณเข้าด้วย ' + em + ')' : '')); }
+    try { await loadAll(); } catch (e) { return renderLogin('เชื่อมต่อฐานข้อมูลไม่ได้: ' + (e.message || e)); }
+    const u = D.profiles.find(x => x.email === em && x.active !== false);
+    if (!u) { await logout(); return renderLogin('บัญชี ' + em + ' ยังไม่มีสิทธิ์ใช้งาน กรุณาติดต่อ Admin'); }
+    S.me = u;
+    await afterLogin();
+  } finally { entering = false; }
 }
 
 /* =================== SHELL =================== */
 function render() {
   if (!S.me) return renderLogin();
-  const nApprove = D.requests.filter(q => (q.status === 'pending_fd' && isFD()) || (q.status === 'memo_approval' && q.memo_approvers[q.memo_step] === S.me.email)).length;
+  const nApprove = D.requests.filter(q => (q.status === 'pending_fd' && isMine(q)) || (q.status === 'memo_approval' && q.memo_approvers[q.memo_step] === S.me.email)).length;
   const nav = [['home', 'หน้าหลัก', myTasks().length], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ', nApprove], ['machine', 'เครื่องจักร'], ['cal', 'PM / CAL', myReminders().length], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
-  const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'เครื่องจักร (สแกน QR)' };
+  const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
   $('#app').innerHTML = `
   <header class="top"><div class="top-in">
     <nav class="topnav">${[['home', 'หน้าหลัก'], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ'], ['cal', 'PM / CAL'], ['report', 'รายงาน']].map(([k, l]) => `<button data-nav="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
     <div class="sp"></div>
-    <div class="who">${IC.user}<span class="nm">${esc(S.me.full_name || S.me.email)} · ${ROLES[role()] || role()}</span></div>
+    <div class="who">${IC.user}<span class="nm">${esc(S.me.full_name || S.me.email)} · ${esc(roleText(S.me))}</span></div>
     <button class="iconbtn k2-orange" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
     <button class="iconbtn k2-cyan" id="refresh" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">${IC.clock}</button>
   </div></header>
@@ -231,7 +281,7 @@ const VIEWS = {
   home() {
     const t = myTasks(), open = D.requests.filter(q => OPEN(q.status)), rem = myReminders();
     const memoWait = D.requests.filter(q => q.status === 'memo_approval').length;
-    return `<div class="h-row"><h1>My Tasks</h1><span class="sub">${ROLES[role()] || role()}</span></div>
+    return `<div class="h-row"><h1>My Tasks</h1><span class="sub">${esc(roleText(S.me))}</span></div>
     <div class="tiles">
       <div class="tile"><b>${open.length}</b><span>ใบงานที่ยังเปิด</span></div>
       <div class="tile ${open.some(q => q.urgency === 'Critical') ? 'alert' : ''}"><b>${open.filter(q => q.urgency === 'Critical').length}</b><span>Critical ที่ยังเปิด</span></div>
@@ -255,11 +305,11 @@ const VIEWS = {
   },
 
   approve() {
-    const fdRows = D.requests.filter(q => q.status === 'pending_fd');
+    const fdRows = D.requests.filter(q => q.status === 'pending_fd').sort((a, b) => canFD(b.machine_no) - canFD(a.machine_no));
     const memoRows = D.requests.filter(q => q.status === 'memo_approval' && (isAdmin() || q.memo_approvers[q.memo_step] === S.me.email));
     return `<div class="h-row"><h1>รออนุมัติ</h1></div>
     <h3 class="sec">ใบแจ้งซ่อมรอ Foreman Day อนุมัติ (${fdRows.length})</h3>
-    ${isFD() ? '' : '<p class="sub">ดูได้อย่างเดียว เฉพาะ Foreman Day และ Admin ที่อนุมัติได้</p>'}
+    <p class="sub">${isFD() ? 'เครื่องจักร / Mold / อื่นๆ → ' + esc(nm(fdOfType('เครื่องจักร'))) + ' · เครื่องทดสอบ → ' + esc(nm(fdOfType('เครื่องทดสอบ'))) + ' · FD ที่ไม่ระบุประเภทอนุมัติแทนได้ทุกประเภท' : 'ดูได้อย่างเดียว เฉพาะ Foreman Day ตามประเภทเครื่อง และ Admin ที่อนุมัติได้'}</p>
     ${taskTable(fdRows, 'ไม่มีใบงานรออนุมัติ')}
     <h3 class="sec">MEMO รอ${isAdmin() ? ' Manager' : 'คุณ'}อนุมัติ (${memoRows.length})</h3>
     ${taskTable(memoRows, 'ไม่มี MEMO รออนุมัติ')}`;
@@ -333,7 +383,7 @@ const VIEWS = {
     if (S.mq) { const k = S.mq.toLowerCase(); rows = rows.filter(m => Object.values(m).join(' ').toLowerCase().includes(k)); }
     return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
-    <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าไฟล์ DATA.xlsx ได้โดยตรง (ชีท Machine Master, PM Master, CAL Master)' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
+    <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Supplier</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
@@ -390,20 +440,27 @@ const VIEWS = {
   },
 
   admin() {
-    return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน</span></div>
-    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>อนุมัติ MEMO ได้</th><th></th></tr></thead><tbody>
-    ${D.profiles.map((p, i) => `<tr><td>${esc(p.email)}</td>
+    const fdSel = (id, v, dis) => `<select id="${id}" class="inp" ${dis ? 'disabled' : ''}><option value="">สำรองทุกประเภท</option>${opts(OPT.fdType, v)}</select>`;
+    return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน · ใช้งาน ${activeUsers().length}</span>
+      <label class="btn ghost" for="uImport" style="cursor:pointer">นำเข้าผู้ใช้จาก Excel</label><input id="uImport" type="file" accept=".xlsx,.xls" hidden></div>
+    <div class="note" style="margin-bottom:14px">ผู้ใช้เข้าระบบด้วยบัญชี Microsoft 365 ของบริษัท เฉพาะอีเมลในรายการนี้ที่ติ๊ก “ใช้งาน” เท่านั้นที่เข้าได้ · Foreman Day รับใบงานตามประเภทเครื่อง (Mold / อื่นๆ ใช้ของเครื่องจักร)</div>
+    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th><th></th></tr></thead><tbody>
+    ${D.profiles.map((p, i) => `<tr class="${p.active === false ? 'off' : ''}"><td>${esc(p.email)}</td>
       <td><label class="sr" for="pn${i}">ชื่อ</label><input id="pn${i}" class="inp" value="${esc(p.full_name || '')}"></td>
-      <td><label class="sr" for="pr${i}">บทบาท</label><select id="pr${i}" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><label class="sr" for="pr${i}">บทบาท</label><select id="pr${i}" class="inp" data-rolesel="${i}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
+      <td><label class="sr" for="pf${i}">Foreman Day ดูแลประเภท</label>${fdSel('pf' + i, p.fd_type, p.role !== 'foreman_day')}</td>
+      <td class="c"><label class="sr" for="pa${i}">สิทธิ์ Admin</label><input id="pa${i}" type="checkbox" ${p.is_admin || p.role === 'admin' ? 'checked' : ''} ${p.role === 'admin' ? 'disabled' : ''}></td>
       <td class="c"><label class="sr" for="pm${i}">อนุมัติ MEMO</label><input id="pm${i}" type="checkbox" ${p.memo_approver ? 'checked' : ''}></td>
+      <td class="c"><label class="sr" for="pact${i}">ใช้งาน</label><input id="pact${i}" type="checkbox" ${p.active !== false ? 'checked' : ''}></td>
       <td class="row-actions"><button class="btn sm" data-psave="${i}">บันทึก</button><button class="btn ghost sm" data-pdel="${esc(p.email)}">ลบ</button></td></tr>`).join('')}
     </tbody></table></div>
     <h3 class="sec">เพิ่มผู้ใช้</h3>
-    <form id="fPreset" class="form" style="max-width:820px">
+    <form id="fPreset" class="form" style="max-width:900px">
       <div class="field"><label for="psEmail">อีเมล *</label><input id="psEmail" class="inp" type="email" required placeholder="name@${esc(C.ALLOWED_DOMAIN)}"></div>
       <div class="field"><label for="psName">ชื่อที่แสดง</label><input id="psName" class="inp"></div>
-      <div class="field"><label for="psRole">บทบาท</label><select id="psRole" class="inp">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-      <div class="field"><span class="flabel">MEMO</span><label><input id="psMemo" type="checkbox"> อนุมัติ MEMO ได้ (Manager App)</label></div>
+      <div class="field"><label for="psRole">บทบาท</label><select id="psRole" class="inp" data-rolesel="ps">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="psFd">Foreman Day ดูแลประเภท</label>${fdSel('psFd', '', true)}</div>
+      <div class="field"><span class="flabel">สิทธิ์เพิ่มเติม</span><label><input id="psAdmin" type="checkbox"> สิทธิ์ Admin</label><label><input id="psMemo" type="checkbox"> อนุมัติ MEMO ได้ (Manager App)</label></div>
       <div class="full"><button class="btn" type="submit">เพิ่มผู้ใช้</button></div>
     </form>`;
   },
@@ -411,10 +468,30 @@ const VIEWS = {
   scan() {
     const m = M(S.scanNo);
     if (!m.machine_no) return '<div class="empty">ไม่พบเครื่องจักรนี้ในระบบ</div>';
-    const open = D.requests.filter(q => q.machine_no === m.machine_no && OPEN(q.status));
-    const hist = D.requests.filter(q => q.machine_no === m.machine_no && q.status === 'closed').slice(0, 5);
-    return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></div>
-    <div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Supplier</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
+    const js = D.requests.filter(q => q.machine_no === m.machine_no);
+    const open = js.filter(q => OPEN(q.status));
+    const closed = js.filter(q => q.status === 'closed');
+    const repairs = closed.filter(q => q.job_type !== 'pmcal');
+    const since = new Date(); since.setMonth(since.getMonth() - 12);
+    const in12 = q => new Date(q.end_at || q.created_at) >= since;
+    const r12 = repairs.filter(in12), p12 = closed.filter(q => q.job_type === 'pmcal' && in12(q));
+    const sum = (a, k) => a.reduce((t, q) => t + Number(q[k] || 0), 0);
+    const timed = repairs.filter(q => q.start_at && q.end_at);
+    const mttr = timed.length ? timed.reduce((t, q) => t + (new Date(q.end_at) - new Date(q.start_at)) / 36e5, 0) / timed.length : null;
+    const plan = planList().filter(x => x.m.machine_no === m.machine_no);
+    const docs = D.docs.filter(d => d.machine_no === m.machine_no);
+    // 12 เดือนล่าสุด: จำนวนงานซ่อม + ค่าใช้จ่าย (ซ่อม / PM-CAL)
+    const months = []; for (let i = 11; i >= 0; i--) { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); months.push({ y: d.getFullYear(), m: d.getMonth(), n: 0, rc: 0, pc: 0 }); }
+    closed.forEach(q => { const d = new Date(q.end_at || q.created_at), x = months.find(k => k.y === d.getFullYear() && k.m === d.getMonth()); if (!x) return; if (q.job_type === 'pmcal') x.pc += Number(q.cost_thb || 0); else { x.n++; x.rc += Number(q.cost_thb || 0); } });
+    const mx = Math.max(1, ...months.map(x => x.rc + x.pc)), mn = Math.max(1, ...months.map(x => x.n));
+    const chart = `<div class="mchart" role="img" aria-label="ค่าใช้จ่ายและจำนวนงานซ่อม 12 เดือนล่าสุด">${months.map(x => `<div class="mcol" title="${TH[x.m]} ${x.y}: ซ่อม ${x.n} ครั้ง · ค่าซ่อม ${x.rc.toLocaleString()} · PM/CAL ${x.pc.toLocaleString()} บาท">
+      <div class="mbar"><i class="pc" style="height:${x.pc / mx * 100}%"></i><i class="rc" style="height:${x.rc / mx * 100}%"></i></div>
+      <span class="mcnt">${x.n || ''}</span><span class="mlbl">${TH[x.m]}</span></div>`).join('')}</div>
+      <div class="legend"><span><i class="rc"></i>ค่าซ่อม</span><span><i class="pc"></i>ค่า PM/CAL</span><span class="sub">ตัวเลข = จำนวนครั้งที่ซ่อม</span></div>`;
+    const stp = d => d < 0 ? `<span class="pill s-rej">เกิน ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
+    return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span>
+      ${isAdmin() ? `<button class="btn ghost" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost" data-qr="${esc(m.machine_no)}">QR</button>` : ''}</div>
+    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Supplier</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
     ${canCreate() ? `<div class="scan-cta"><button class="btn big" data-newfor="${esc(m.machine_no)}">+ แจ้งซ่อม / เปิดใบงานเครื่องนี้</button></div>` : ''}
     <h3 class="sec">ใบงานที่ค้าง (${open.length})</h3>
     ${open.length ? open.map(q => `<div class="jcard">
@@ -423,8 +500,23 @@ const VIEWS = {
         <div class="sub">${esc(jobType(q))} · เปิดโดย ${esc(nm(q.reporter))} · ${fd(q.created_at)} · ถัดไป: ${esc(ownerText(q))}</div></div>
       <div class="btns"><button class="btn ${isMine(q) ? '' : 'ghost'}" data-open="${esc(q.id)}">${isMine(q) ? 'ดำเนินการ' : 'เปิดใบงาน'}</button></div>
     </div>`).join('') : '<div class="empty">ไม่มีใบงานค้างของเครื่องนี้</div>'}
-    <h3 class="sec">ประวัติการซ่อมล่าสุด</h3>
-    ${taskTable(hist, 'ยังไม่มีประวัติการซ่อม')}`;
+    <h3 class="sec">Dashboard 12 เดือนล่าสุด</h3>
+    <div class="tiles">
+      <div class="tile"><b>${r12.length}</b><span>ครั้งที่ซ่อม</span></div>
+      <div class="tile"><b>${sum(r12, 'downtime_min').toLocaleString()}</b><span>Downtime (นาที)</span></div>
+      <div class="tile"><b>${mttr == null ? '-' : mttr.toFixed(1)}</b><span>MTTR (ชม./งาน) ทั้งหมด</span></div>
+      <div class="tile"><b>${sum(r12, 'cost_thb').toLocaleString()}</b><span>ค่าซ่อม (บาท)</span></div>
+      <div class="tile"><b>${sum(p12, 'cost_thb').toLocaleString()}</b><span>ค่า PM/CAL (บาท)</span></div>
+    </div>
+    <div class="grid2">
+      <div class="box"><h3>ค่าใช้จ่ายรายเดือน</h3>${closed.length ? chart : '<div class="empty">ยังไม่มีงานที่ปิดแล้ว</div>'}</div>
+      <div class="box"><h3>แผน PM / CAL</h3>${plan.length ? `<dl class="kv">${plan.map(x => `<dt>${x.kind}</dt><dd>ล่าสุด ${fd(x.last)} · ทุก ${x.iv} เดือน<br>ครบกำหนด <b>${fd(x.next)}</b> ${stp(x.days)}${x.job ? ` · <a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a>` : ''}</dd>`).join('')}</dl>` : `<div class="empty">ไม่มีแผน (${esc(m.maintenance_type)})</div>`}
+        <h3 style="margin-top:14px">เอกสารของเครื่อง (${docs.length})</h3>${docs.length ? docs.map(d => `<div><a href="#" class="folio" data-doc="${d.id}">${esc(d.title)}</a> <span class="sub">${esc(d.kind)}</span></div>`).join('') : '<div class="sub">ยังไม่มีเอกสาร</div>'}</div>
+    </div>
+    <h3 class="sec">ประวัติการซ่อม / PM / CAL (${closed.length})</h3>
+    ${closed.length ? `<div class="tbl-wrap"><table><thead><tr><th>เลขที่</th><th>ประเภท</th><th>อาการ / วิธีแก้</th><th>สาเหตุ</th><th>อะไหล่</th><th>Downtime</th><th>ค่าใช้จ่าย</th><th>เสร็จ</th></tr></thead><tbody>
+      ${closed.map(q => `<tr class="click" data-open="${esc(q.id)}"><td class="mono">${esc(q.id)}</td><td>${esc(jobType(q))}</td><td>${esc(q.symptom)}<br><span class="sub">${esc(q.fix_detail || '')}</span></td><td>${esc(q.root_cause || '-')}</td><td>${esc(q.parts_used || '-')}</td><td class="num">${q.downtime_min ?? '-'}</td><td class="num">${q.cost_thb != null ? Number(q.cost_thb).toLocaleString() : '-'}</td><td class="num">${fd(q.end_at, false)}</td></tr>`).join('')}
+    </tbody></table></div>` : '<div class="empty">ยังไม่มีประวัติ</div>'}`;
   }
 };
 
@@ -491,8 +583,8 @@ function actions(q) {
   const waitNote = () => `<div class="note">ขั้นตอนนี้รอ <b>${esc(ownerText(q))}</b></div>`;
   switch (q.status) {
     case 'pending_fd':
-      if (!isFD()) return waitNote();
-      return box('Foreman Day: อนุมัติซ่อม', `<div class="choice">
+      if (!canFD(q.machine_no)) return waitNote();
+      return box('Foreman Day: อนุมัติซ่อม' + (!fdsFor(q.machine_no).includes(me) && fdsFor(q.machine_no).length ? ' <span class="sub">(แทน ' + esc(fdsFor(q.machine_no).map(nm).join(', ')) + ')</span>' : ''), `<div class="choice">
         <label><input type="radio" name="apType" value="RMT" checked> <b>Normal · RMT</b> · Admin แจ้งซ่อมผ่าน SAP</label>
         <label><input type="radio" name="apType" value="FM"> <b>Normal · FM</b> · Admin แจ้งซ่อมผ่าน K2</label>
         <label><input type="radio" name="apType" value="special"> <b>Special</b> · ขอใบเสนอราคา Vendor → MEMO → Manager App → PO</label></div>
@@ -518,10 +610,10 @@ function actions(q) {
         <div class="field"><label for="exFiles">ภาพถ่าย / หลักฐานการแจ้ง</label><input id="exFiles" class="inp" type="file" multiple></div></div>
         <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="admin_report">บันทึกการแจ้งซ่อม</button></div>`);
     case 'ext_repair':
-      if (!isFD()) return waitNote();
+      if (!canFD(q.machine_no)) return waitNote();
       return box(`Foreman Day: สรุปผลการซ่อมของ ${esc(q.repair_unit)} แล้วปิดงาน`, closeFields('ex', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_ext">สรุปและปิดงาน</button></div>`);
     case 'quotation': case 'memo_rejected':
-      if (!(mine || isFD())) return waitNote();
+      if (!(mine || is('foreman_day'))) return waitNote();
       return (q.job_type === 'pmcal' && !q.action_at ? box('เริ่มดำเนินการ PM/CAL', `<p class="sub" style="margin-top:0">กดเมื่อเริ่มขอใบเสนอราคาจาก Vendor แล้ว ระบบจะหยุดส่งอีเมลเตือน</p><div class="btns"><button class="btn warn" data-act="pm_action">เริ่มดำเนินการแล้ว</button></div>`) : '')
         + box(q.status === 'memo_rejected' ? 'แก้ไข MEMO แล้วส่งอนุมัติใหม่' : 'ใบเสนอราคา และออก MEMO', (q.status === 'memo_rejected' ? `<p class="u-Critical" style="margin-top:0">MEMO ไม่อนุมัติ: ${esc(q.return_note || '-')}</p>` : '') + memoForm(q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="memo_submit">ส่ง MEMO ให้ Manager อนุมัติ</button></div>`);
     case 'memo_approval': {
@@ -534,7 +626,7 @@ function actions(q) {
     case 'po_vendor': {
       let html = '';
       if (isAdmin() && !q.po_no) html += box('Admin: ออก PO', `<div class="form"><div class="field"><label for="poNo">เลขที่ PO *</label><input id="poNo" class="inp"></div><div class="field"><label for="poFiles">ไฟล์ PO</label><input id="poFiles" class="inp" type="file" multiple></div></div><div class="btns" style="margin-top:12px"><button class="btn ok" data-act="po_save">บันทึก PO</button></div>`);
-      if (q.assignee === me || isFD() || isAdmin()) {
+      if (q.assignee === me || canFD(q.machine_no) || isAdmin()) {
         html += box('นัด Vendor เข้าดำเนินการ', `<div class="form"><div class="field"><label for="vdDate">วันนัด Vendor</label><input id="vdDate" class="inp" type="date" value="${esc(q.vendor_date || '')}"></div></div><div class="btns" style="margin-top:12px"><button class="btn" data-act="vendor_date">บันทึกวันนัด</button></div>`);
         html += box('สรุปผลก่อนปิดงาน', q.po_no ? closeFields('pv', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_special">สรุปและปิดงาน</button></div>` : '<div class="note">ปิดงานได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
       }
@@ -547,14 +639,14 @@ function actions(q) {
 async function act(a) {
   const q = D.requests.find(x => x.id === S.sel); if (!q) return;
   const me = S.me.email, now = new Date().toISOString(), v = id => ($('#' + id)?.value || '').trim();
-  let patch = null, log = '', msg = '', machinePatch = null;
+  let patch = null, log = '', msg = '';
   try {
     switch (a) {
       case 'fd_approve': {
         const t = document.querySelector('input[name=apType]:checked').value;
         if (t === 'special') { patch = { status: 'quotation', job_type: 'special', assignee: v('apAssignee') || me }; log = 'Foreman Day อนุมัติ · Special · ผู้รับผิดชอบ ' + nm(patch.assignee); }
         else { patch = { status: 'wait_admin', job_type: 'normal', repair_unit: t }; log = `Foreman Day อนุมัติ · Normal ส่งซ่อม ${t} (${t === 'FM' ? 'K2' : 'SAP'})`; }
-        Object.assign(patch, { approved_by: me, approved_at: now, return_note: null }); if (v('apNote')) log += ' · ' + v('apNote'); msg = 'อนุมัติแล้ว'; break;
+        Object.assign(patch, { return_note: null }); if (v('apNote')) log += ' · ' + v('apNote'); msg = 'อนุมัติแล้ว'; break;
       }
       case 'fd_reject':
         if (!v('apNote')) return toast('กรอกหมายเหตุเหตุผลที่ไม่อนุมัติ');
@@ -577,7 +669,7 @@ async function act(a) {
         patch = readClose(pre); if (!patch) return;
         patch.attachments = [...(q.attachments || []), ...await uploadFiles(q.id, 'close', filesOf(pre + 'Files'))];
         log = 'สรุปผลและปิดงาน · ' + patch.fix_detail; msg = 'ปิดงานแล้ว';
-        if (q.job_type === 'pmcal') machinePatch = { [q.pmcal_kind === 'CAL' ? 'cal_last_date' : 'pm_last_date']: patch.end_at.slice(0, 10) };
+        if (q.job_type === 'pmcal') log += ` · อัปเดต ${q.pmcal_kind} ล่าสุดของเครื่องอัตโนมัติ`;
         break;
       }
       case 'pm_action': patch = { action_at: now }; log = 'Member เริ่มดำเนินการ (ขอใบเสนอราคา)'; msg = 'บันทึกแล้ว หยุดส่งอีเมลเตือน'; break;
@@ -614,7 +706,6 @@ async function act(a) {
   $$('[data-act]').forEach(b => b.disabled = true);
   const { error } = await sb.from('requests').update(patch).eq('id', q.id);
   if (error) { $$('[data-act]').forEach(b => b.disabled = false); return fail(error); }
-  if (machinePatch) await sb.from('machines').update(machinePatch).eq('machine_no', q.machine_no);
   await addLog(q.id, log);
   toast(msg);
   await loadAll(); openDetail(q.id, false);
@@ -637,9 +728,10 @@ async function openDetail(id, scroll = true) {
 
 /* ---------- QR ---------- */
 async function afterLogin() {
-  try { await sb.rpc('ensure_pmcal_jobs'); } catch (e) { /* function missing until v2_workflow.sql is run */ }
+  try { await sb.rpc('ensure_pmcal_jobs'); } catch (e) { /* ignore */ }
   try { await loadAll(); } catch (e) { return fail(e); }
   const no = PENDING_M; PENDING_M = null; S.view = 'home';
+  try { sessionStorage.removeItem(SCAN_KEY); } catch (e) {}
   if (no) {
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
     if (D.machines.some(m => m.machine_no === no)) { S.scanNo = no; S.view = 'scan'; } else toast('ไม่พบเครื่อง ' + no + ' ในระบบ');
@@ -666,7 +758,7 @@ function printQR(list) {
 const MF = [
   ['machine_no', 'Machine number *', 'text'], ['machine_name', 'Machine Name *', 'text'], ['model', 'Model', 'text'], ['serial_number', 'Serial Number', 'text'],
   ['machine_type', 'Machine Type', OPT.type], ['location', 'Location', OPT.loc], ['status', 'Status', OPT.mstatus], ['priority', 'Priority', OPT.prio],
-  ['maintenance_type', 'Maintenance Type', OPT.mtype], ['responsibility', 'Member ผู้รับผิดชอบ (อีเมล)', 'email'], ['eng_foreman', 'Eng, Foreman (อีเมล)', 'email'],
+  ['maintenance_type', 'Maintenance Type', OPT.mtype], ['responsibility', 'Member ผู้รับผิดชอบ (อีเมล)', 'email'], ['eng_foreman', 'Eng, Foreman (อีเมล · ว่าง = ตามประเภทเครื่อง)', 'email'],
   ['supplier', 'Supplier', 'text'], ['contact_person', 'Contact Person', 'text'], ['phone', 'เบอร์โทรศัพท์', 'text'], ['email', 'E-mail Supplier', 'text'], ['other_contact', 'Line / ช่องทางอื่น', 'text'],
   ['pm_last_date', 'PM ล่าสุด', 'date'], ['pm_interval_month', 'PM Interval (เดือน)', OPT.interval], ['cal_last_date', 'CAL ล่าสุด', 'date'], ['cal_interval_month', 'CAL Interval (เดือน)', OPT.interval]
 ];
@@ -683,6 +775,7 @@ function machineForm(no) {
     if (!row.machine_no || !row.machine_name) return toast('กรอก Machine number และ Machine Name');
     ['pm_interval_month', 'cal_interval_month'].forEach(k => row[k] = row[k] ? parseInt(row[k]) : null);
     row.status ||= 'Active'; row.priority ||= 'Normal'; row.maintenance_type ||= 'No Plan'; row.updated_at = new Date().toISOString();
+    if (!row.eng_foreman) row.eng_foreman = fdOfType(row.machine_type === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร');
     const { error } = await sb.from('machines').upsert(row);
     if (error) return fail(error);
     closeModal(); toast('บันทึกแล้ว'); try { await sb.rpc('ensure_pmcal_jobs'); } catch (e2) {} reload();
@@ -695,29 +788,85 @@ function machineForm(no) {
     closeModal(); toast('ลบแล้ว'); reload();
   };
 }
-const xDate = v => { if (!v) return null; if (v instanceof Date) return new Date(v.getTime() - v.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); const d = new Date(v); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
+const xDate = v => { if (!v) return null; if (v instanceof Date) return new Date(v.getTime() - v.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); if (typeof v === 'number') return new Date(Math.round((v - 25569) * 864e5)).toISOString().slice(0, 10); const t = String(v).trim(), th = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if (th) { let y = +th[3]; if (y > 2400) y -= 543; return y + '-' + pad(th[2]) + '-' + pad(th[1]); } const d = new Date(t); return isNaN(d) ? null : d.toISOString().slice(0, 10); };
+function readBook(wb) {
+  const find = (...names) => Object.keys(wb.Sheets).find(n => names.some(x => n.trim().toLowerCase() === x.toLowerCase()));
+  const sheet = (...names) => { const n = find(...names); if (!n) return null; return XLSX.utils.sheet_to_json(wb.Sheets[n], { defval: null }).map(r => { const o = {}; for (const k in r) o[k.replace(/\s+/g, ' ').trim().toLowerCase()] = typeof r[k] === 'string' ? r[k].trim() : r[k]; return o; }); };
+  const g = (r, ...keys) => { for (const k of keys) if (r[k] != null && r[k] !== '' && r[k] !== '-') return r[k]; return null; };
+  return { sheet, g };
+}
+const ROLE_IN = { 'member': 'member', 'foreman shift': 'foreman_shift', 'foreman day': 'foreman_day', 'manager': 'manager', 'admin': 'admin' };
+const yes = v => /^(y|yes|ใช่|✓|true|1)$/i.test(String(v ?? '').trim());
+function parseUsers(rows, g) {
+  const out = [], bad = [];
+  for (const r of rows || []) {
+    const em = String(g(r, 'อีเมล', 'email', 'e-mail') || '').trim().toLowerCase(); if (!em) continue;
+    const ro = ROLE_IN[String(g(r, 'บทบาท', 'role') || 'member').trim().toLowerCase()] || ROLE_IN[String(g(r, 'บทบาท', 'role')).replace(/_/g, ' ').toLowerCase()];
+    if (!domainOk(em) || !ro) { bad.push(em); continue; }
+    const ft = String(g(r, 'foreman day ดูแลประเภท', 'fd_type') || '').trim();
+    out.push({ email: em, full_name: g(r, 'ชื่อที่แสดง', 'ชื่อ', 'name') || null, role: ro, fd_type: ro === 'foreman_day' && OPT.fdType.includes(ft) ? ft : null,
+      memo_approver: yes(g(r, 'อนุมัติ memo ได้ (y/n)', 'อนุมัติ memo ได้', 'memo')), is_admin: ro === 'admin' || yes(g(r, 'สิทธิ์ admin (y/n)', 'สิทธิ์ admin', 'admin')) });
+  }
+  return { out, bad };
+}
+async function importUsers(file) {
+  try {
+    const { sheet, g } = readBook(XLSX.read(await file.arrayBuffer(), { cellDates: true }));
+    const rows = sheet('ผู้ใช้', 'Users');
+    if (!rows) return toast('ไม่พบชีท “ผู้ใช้” ในไฟล์');
+    const { out, bad } = parseUsers(rows, g);
+    if (!out.length) return toast('ไม่พบรายชื่อที่ถูกต้องในชีทผู้ใช้');
+    const merged = D.profiles.map(x => out.find(u => u.email === x.email) || x).concat(out.filter(u => !D.profiles.some(x => x.email === u.email)));
+    if (!merged.some(x => x.email === S.me.email && (x.role === 'admin' || x.is_admin))) return toast('ไฟล์นี้จะนำสิทธิ์ Admin ของคุณออก ให้ใส่ Y ในคอลัมน์สิทธิ์ Admin ของตัวเองก่อน');
+    const { error } = await sb.from('app_users').upsert(out);
+    if (error) throw error;
+    toast(`นำเข้าผู้ใช้ ${out.length} คน` + (bad.length ? ` · ข้าม ${bad.length} แถว (อีเมล/บทบาทไม่ถูกต้อง: ${bad.slice(0, 3).join(', ')})` : ''));
+    reload();
+  } catch (e) { fail(e); }
+}
 async function importExcel(file) {
   try {
-    const wb = XLSX.read(await file.arrayBuffer(), { cellDates: true });
-    const sheet = name => { const ws = wb.Sheets[Object.keys(wb.Sheets).find(n => n.trim().toLowerCase() === name.toLowerCase())]; if (!ws) return []; return XLSX.utils.sheet_to_json(ws, { defval: null }).map(r => { const o = {}; for (const k in r) o[k.replace(/\s+/g, ' ').trim().toLowerCase()] = typeof r[k] === 'string' ? r[k].trim() : r[k]; return o; }); };
-    const g = (r, ...keys) => { for (const k of keys) if (r[k] != null && r[k] !== '' && r[k] !== '-') return r[k]; return null; };
-    const rows = sheet('Machine Master').filter(r => g(r, 'machine number')).map(r => ({
-      machine_no: String(g(r, 'machine number')), machine_name: String(g(r, 'machine name') || g(r, 'machine number')),
-      model: g(r, 'model'), serial_number: g(r, 'serial number') && String(g(r, 'serial number')), machine_type: g(r, 'machine type'), location: g(r, 'location'),
-      status: g(r, 'staus', 'status') || 'Active', priority: g(r, 'priority') || 'Normal', maintenance_type: g(r, 'maintenance type') || 'No Plan',
-      responsibility: g(r, 'responsibility'), eng_foreman: g(r, 'eng,foreman', 'eng, foreman'), supplier: g(r, 'supplier'), contact_person: g(r, 'contact person'),
-      phone: g(r, 'เบอร์โทรศัพท์') && String(g(r, 'เบอร์โทรศัพท์')), email: g(r, 'e-mail'), other_contact: g(r, 'line/ช่องทางอื่น'), updated_at: new Date().toISOString()
-    }));
-    if (rows.length) { const { error } = await sb.from('machines').upsert(rows); if (error) throw error; }
+    const { sheet, g } = readBook(XLSX.read(await file.arrayBuffer(), { cellDates: true }));
+    const mm = sheet('Machine Master') || [];
+    const skip = no => /^ตัวอย่าง|^example/i.test(no);
+    const engOf = t => fdOfType(t === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร');
+    const rows = mm.filter(r => g(r, 'machine number') && !skip(String(g(r, 'machine number')))).map(r => {
+      const type = g(r, 'machine type'), eng = String(g(r, 'eng,foreman', 'eng, foreman') || '');
+      const pmD = xDate(g(r, 'pm date')), pmI = parseInt(g(r, 'pm interval')) || null, calD = xDate(g(r, 'cal date')), calI = parseInt(g(r, 'cal interval')) || null;
+      const row = {
+        machine_no: String(g(r, 'machine number')).trim(), machine_name: String(g(r, 'machine name') || g(r, 'machine number')),
+        model: g(r, 'model'), serial_number: g(r, 'serial number') && String(g(r, 'serial number')), machine_type: type, location: g(r, 'location'),
+        status: g(r, 'staus', 'status') || 'Active', priority: g(r, 'priority') || 'Normal', maintenance_type: g(r, 'maintenance type') || 'No Plan',
+        responsibility: g(r, 'responsibility') && String(g(r, 'responsibility')).toLowerCase(), eng_foreman: domainOk(eng.trim()) ? eng.trim().toLowerCase() : engOf(type),
+        supplier: g(r, 'supplier'), contact_person: g(r, 'contact person'), phone: g(r, 'เบอร์โทรศัพท์') && String(g(r, 'เบอร์โทรศัพท์')), email: g(r, 'e-mail'), other_contact: g(r, 'line/ช่องทางอื่น'),
+        updated_at: new Date().toISOString()
+      };
+      // คอลัมน์ PM/CAL ในชีทเดียวกัน (แบบฟอร์มใหม่) — ใส่เฉพาะเมื่อมีข้อมูล เพื่อไม่ลบค่าที่ระบบอัปเดตไว้
+      if ('pm date' in r || 'pm interval' in r) Object.assign(row, { pm_last_date: pmD, pm_interval_month: pmI });
+      if ('cal date' in r || 'cal interval' in r) Object.assign(row, { cal_last_date: calD, cal_interval_month: calI });
+      return row;
+    });
+    let users = 0;
+    const ur = sheet('ผู้ใช้');
+    if (ur) {
+      const { out } = parseUsers(ur, g);
+      const merged = D.profiles.map(x => out.find(u => u.email === x.email) || x).concat(out.filter(u => !D.profiles.some(x => x.email === u.email)));
+      if (out.length && merged.some(x => x.email === S.me.email && (x.role === 'admin' || x.is_admin))) { const { error } = await sb.from('app_users').upsert(out); if (error) throw error; users = out.length; await loadAll(); rows.forEach(r => { if (!r.eng_foreman) r.eng_foreman = engOf(r.machine_type); }); }
+    }
+    // upsert แยกตามชุดคอลัมน์ (PostgREST ต้องการคีย์เท่ากันทุกแถว)
+    const groups = {}; rows.forEach(r => { const k = Object.keys(r).sort().join(','); (groups[k] ||= []).push(r); });
+    for (const g2 of Object.values(groups)) { const { error } = await sb.from('machines').upsert(g2); if (error) throw error; }
     let plan = 0;
     for (const [sh, dk] of [['PM Master', 'pm'], ['CAL Master', 'cal']]) {
-      for (const r of sheet(sh).filter(r => g(r, 'machine number'))) {
+      for (const r of (sheet(sh) || []).filter(r => g(r, 'machine number'))) {
         const { error } = await sb.from('machines').update({ [dk + '_last_date']: xDate(g(r, dk + ' date')), [dk + '_interval_month']: parseInt(g(r, 'interval')) || null }).eq('machine_no', String(g(r, 'machine number')));
         if (!error) plan++;
       }
     }
-    try { await sb.rpc('ensure_pmcal_jobs'); } catch (e) {}
-    toast(`นำเข้าเครื่องจักร ${rows.length} เครื่อง · แผน PM/CAL ${plan} รายการ`);
+    plan += rows.filter(r => r.pm_last_date || r.cal_last_date).length;
+    let created = 0; try { const { data } = await sb.rpc('ensure_pmcal_jobs'); created = data || 0; } catch (e) {}
+    const later = ['Vendors', 'Spare Parts', 'จุดวัดไฟ', 'ทะเบียนเอกสาร'].filter(n => sheet(n)?.length);
+    toast(`นำเข้าเครื่องจักร ${rows.length} เครื่อง · แผน PM/CAL ${plan} รายการ · เปิดใบงาน PM/CAL ใหม่ ${created}` + (users ? ` · ผู้ใช้ ${users} คน` : '') + (later.length ? ` · ชีท ${later.join(', ')} จะนำเข้าในระยะ 2` : ''));
     reload();
   } catch (e) { fail(e); }
 }
@@ -803,28 +952,37 @@ function bind() {
     const { error } = await sb.from('machines').update({ [kind === 'PM' ? 'pm_last_date' : 'cal_last_date']: todayStr() }).eq('machine_no', no);
     if (error) return fail(error); toast(`บันทึก ${kind} ${no} แล้ว`); reload();
   });
+  const admins = list => list.filter(x => x.active !== false && (x.role === 'admin' || x.is_admin)).length;
   $$('[data-psave]').forEach(b => b.onclick = async () => {
-    const i = b.dataset.psave, p = D.profiles[i], newRole = $('#pr' + i).value;
-    if (p.role === 'admin' && newRole !== 'admin' && D.profiles.filter(x => x.role === 'admin').length <= 1) return toast('ต้องมี Admin อย่างน้อย 1 คน');
-    const { error } = await sb.from('role_presets').update({ full_name: $('#pn' + i).value.trim() || null, role: newRole, memo_approver: $('#pm' + i).checked }).eq('email', p.email);
+    const i = b.dataset.psave, p = D.profiles[i];
+    const row = { full_name: $('#pn' + i).value.trim() || null, role: $('#pr' + i).value, fd_type: $('#pf' + i).value || null, is_admin: $('#pa' + i).checked, memo_approver: $('#pm' + i).checked, active: $('#pact' + i).checked };
+    if (row.role !== 'foreman_day') row.fd_type = null;
+    if (admins(D.profiles.map(x => x.email === p.email ? { ...x, ...row } : x)) < 1) return toast('ต้องมีผู้ดูแลระบบ (Admin) อย่างน้อย 1 คน');
+    if (p.email === S.me.email && !(row.role === 'admin' || row.is_admin) ) return toast('นำสิทธิ์ Admin ของตัวเองออกไม่ได้ ให้ Admin คนอื่นทำ');
+    const { error } = await sb.from('app_users').update(row).eq('email', p.email);
     if (error) return fail(error); toast('บันทึกแล้ว'); reload();
   });
   $$('[data-pdel]').forEach(b => b.onclick = async () => {
-    const em = b.dataset.pdel, target = D.profiles.find(x => x.email === em);
+    const em = b.dataset.pdel;
     if (em === S.me.email) return toast('ลบบัญชีของตัวเองไม่ได้');
-    if (target?.role === 'admin' && D.profiles.filter(x => x.role === 'admin').length <= 1) return toast('ต้องมี Admin อย่างน้อย 1 คน');
+    if (admins(D.profiles.filter(x => x.email !== em)) < 1) return toast('ต้องมีผู้ดูแลระบบ (Admin) อย่างน้อย 1 คน');
+    if (D.requests.some(q => [q.reporter, q.assignee, q.approved_by, q.closed_by].includes(em))) return toast('ผู้ใช้นี้มีประวัติในใบงาน ให้เอาติ๊ก “ใช้งาน” ออกแทนการลบ');
     if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ?'; return; }
-    const { error } = await sb.from('role_presets').delete().eq('email', em);
+    const { error } = await sb.from('app_users').delete().eq('email', em);
     if (error) return fail(error); toast('ลบ ' + em + ' แล้ว'); reload();
   });
   const fp = $('#fPreset');
   if (fp) fp.onsubmit = async e => {
     e.preventDefault(); const em = $('#psEmail').value.trim().toLowerCase();
     if (!domainOk(em)) return toast('ใช้ได้เฉพาะอีเมล @' + C.ALLOWED_DOMAIN);
-    const { error } = await sb.from('role_presets').upsert({ email: em, full_name: $('#psName').value.trim() || null, role: $('#psRole').value, memo_approver: $('#psMemo').checked });
+    if (D.profiles.some(x => x.email === em)) return toast(em + ' มีอยู่แล้ว แก้ไขในตารางด้านบน');
+    const r = $('#psRole').value;
+    const { error } = await sb.from('app_users').insert({ email: em, full_name: $('#psName').value.trim() || null, role: r, fd_type: r === 'foreman_day' ? ($('#psFd').value || null) : null, is_admin: $('#psAdmin').checked, memo_approver: $('#psMemo').checked });
     if (error) return fail(error); toast('เพิ่มผู้ใช้แล้ว'); reload();
   };
-  $('#logout').onclick = () => { logoutLocal(); S.view = 'home'; renderLogin(); };
+  $$('[data-rolesel]').forEach(sel => sel.onchange = () => { const k = sel.dataset.rolesel, f = $(k === 'ps' ? '#psFd' : '#pf' + k); f.disabled = sel.value !== 'foreman_day'; if (f.disabled) f.value = ''; const a = $(k === 'ps' ? '#psAdmin' : '#pa' + k); if (sel.value === 'admin') { a.checked = true; a.disabled = true; } else a.disabled = false; });
+  $('#uImport') && ($('#uImport').onchange = e => { const f = e.target.files[0]; if (f) importUsers(f); e.target.value = ''; });
+  $('#logout').onclick = async () => { await logout(); S.view = 'home'; renderLogin(); };
   $('#refresh').onclick = () => { reload(); toast('รีเฟรชข้อมูลแล้ว'); };
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq');
@@ -870,10 +1028,13 @@ function subscribe() {
 }
 async function boot() {
   if (C.SUPABASE_URL.includes('YOUR-PROJECT')) { $('#app').innerHTML = '<div class="login"><div class="login-card"><h1>ยังไม่ได้ตั้งค่า Supabase</h1><p>แก้ไขไฟล์ js/config.js ตามคู่มือใน README.md</p></div></div>'; return; }
-  try { await loadAll(); } catch (e) { $('#app').innerHTML = `<div class="login"><div class="login-card"><h1>เชื่อมต่อฐานข้อมูลไม่ได้</h1><div class="err">${esc(e.message || e)}</div><p class="sub">ตรวจว่ารัน schema.sql, trial_open_access.sql และ v2_workflow.sql ใน Supabase แล้ว</p></div></div>`; return; }
-  let saved = null; try { saved = localStorage.getItem(USER_KEY); } catch (e) {}
-  const u = D.profiles.find(x => x.email === saved);
-  if (u) { S.me = u; afterLogin(); } else renderLogin();
+  const err = urlAuthError();
+  sb.auth.onAuthStateChange((ev, session) => {
+    if (ev === 'SIGNED_IN' && session) setTimeout(() => enter(session), 0);
+    else if (ev === 'SIGNED_OUT' && S.me) { S.me = null; renderLogin('ออกจากระบบแล้ว'); }
+  });
+  const { data } = await sb.auth.getSession();
+  if (data?.session && !err) await enter(data.session); else if (!S.me) renderLogin(err);
 }
 boot();
 })();

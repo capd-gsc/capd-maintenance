@@ -5,5 +5,7 @@ window.APP_CONFIG = {
   SUPABASE_ANON_KEY: 'sb_publishable_8UUUlNDvS7-3PB88i0D0vg_nOvhhjJ9',
   ALLOWED_DOMAIN: 'scg.com',
   APP_NAME: 'CAPD Maintenance',
-  ORG: 'GSC · SCGC'
+  ORG: 'GSC · SCGC',
+  // ทางสำรองระหว่างรอ IT ตั้งค่า Microsoft 365: true = แสดงช่อง "รับรหัสทางอีเมล" (ต้องเปิด Email provider + ตั้ง SMTP ใน Supabase)
+  EMAIL_OTP: false
 };

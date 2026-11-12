@@ -276,3 +276,21 @@ h3.sec{font-size:17px;margin:22px 0 10px}
 .attg img{width:84px;height:84px;object-fit:cover;border:1px solid var(--line);display:block}
 .attg a.file{border:1px solid var(--line);padding:6px 10px;text-decoration:none;background:var(--panel-2);overflow-wrap:anywhere}
 td.c{text-align:center}
+
+/* ---------- v3: Microsoft login, users, machine dashboard ---------- */
+.btn.ms{background:#fff;color:#2f2f2f;border:1px solid #8c8c8c;display:flex;align-items:center;justify-content:center;gap:10px;padding:11px 16px;font-weight:600}
+.btn.ms:hover{background:#f3f3f3}
+.btn.ms:disabled{opacity:.6;cursor:wait}
+.login .or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12.5px}
+.login .or::before,.login .or::after{content:"";flex:1;border-top:1px solid var(--line)}
+tr.off td{opacity:.55}
+.mchart{display:grid;grid-template-columns:repeat(12,minmax(0,1fr));gap:4px;align-items:end;height:170px;padding-top:6px}
+.mcol{display:flex;flex-direction:column;align-items:center;height:100%;min-width:0}
+.mbar{flex:1;width:70%;max-width:26px;display:flex;flex-direction:column-reverse;background:var(--idle-bg)}
+.mbar i{display:block;width:100%}
+.mbar i.rc,.legend i.rc{background:var(--link)}
+.mbar i.pc,.legend i.pc{background:var(--accent)}
+.mcnt{font-size:11px;font-variant-numeric:tabular-nums;min-height:14px}
+.mlbl{font-size:10.5px;color:var(--muted);white-space:nowrap}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:8px;align-items:center}
+.legend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
