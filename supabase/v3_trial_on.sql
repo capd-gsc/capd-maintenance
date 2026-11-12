@@ -28,7 +28,7 @@ declare p record;
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where (schemaname = 'public' and tablename in ('app_users','role_presets','machines','requests','request_logs','documents'))
-              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','docs read','docs write','docs delete')) loop
+              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete')) loop
     execute format('alter policy %I on %I.%I to anon, authenticated', p.policyname, p.schemaname, p.tablename);
   end loop;
 end $$;

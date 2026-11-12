@@ -15,6 +15,7 @@ supabase/v2_workflow.sql       Flow v2: Role ใหม่, งาน Normal/Spec
 supabase/v3_auth.sql           ใช้งานจริง: Login Microsoft 365, ผู้ใช้ (app_users), ตรวจสิทธิ์ทุกขั้นในฐานข้อมูล
 supabase/v3_trial_on.sql       โหมดทดลอง v3: เข้าด้วยอีเมลอย่างเดียว (ก่อน IT ตั้งค่า)
 supabase/v3_trial_off.sql      ปิดโหมดทดลอง
+supabase/v3_1_edit_delete.sql  ปุ่มแก้ไข / ลบใบงาน (ติดตั้ง setup_v3_trial.sql ก่อน 13 พ.ย. 2026 ให้รันไฟล์นี้เพิ่ม)
 docs/IT-Microsoft-Login.md     ขั้นตอนที่ IT ต้องตั้งค่า (ส่งไฟล์นี้ให้ IT)
 supabase/functions/pmcal-reminders/  อีเมลเตือน PM/CAL รายวัน
 supabase/schedule_reminders.sql ตั้งเวลาส่งอีเมลทุกวัน 08:00

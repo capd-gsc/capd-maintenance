@@ -362,7 +362,7 @@ const VIEWS = {
     const m = M(q.machine_no);
     const kv = (k, v) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}</dd>`;
     const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => /\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`).join('')}</div>` : ''; }).join('') : '';
-    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}<button class="btn ghost" data-nav="list">← กลับ</button></div>
+    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
     ${stepsHtml(q)}
     <div class="detail">
       <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
@@ -949,6 +949,59 @@ function exportRequests() {
   XLSX.writeFile(wb, 'CAPD-Maintenance-' + todayStr() + '.xlsx');
 }
 
+/* ---------- แก้ไข / ลบใบงาน ---------- */
+// ผู้เปิดใบงานแก้ข้อมูลแจ้งซ่อมได้จนกว่า FD จะอนุมัติ · Admin แก้ได้ทุกสถานะ (ฐานข้อมูลตรวจซ้ำใน guard_request)
+const canEdit = q => isAdmin() || (q.reporter === S.me.email && ['pending_fd', 'returned'].includes(q.status));
+const EDIT_BASE = [['machine_no', 'เครื่องจักร', 'machine'], ['urgency', 'ความเร่งด่วน', OPT.prio], ['symptom', 'อาการที่พบ', 'area'], ['first_fix', 'วิธีแก้ไขเบื้องต้น', 'area']];
+const EDIT_ADMIN = [['external_ref', 'เลขที่แจ้ง SAP / K2', 'text'], ['vendor', 'Vendor', 'text'], ['quotation_amount', 'ราคาใบเสนอราคา (บาท)', 'number'], ['memo_no', 'เลขที่ MEMO', 'text'], ['po_no', 'เลขที่ PO', 'text'], ['vendor_date', 'วันนัด Vendor', 'date']];
+const EDIT_CLOSED = [['fix_detail', 'วิธีการแก้ไข', 'area'], ['root_cause', 'สาเหตุ', 'text'], ['parts_used', 'อะไหล่ที่ใช้', 'text'], ['cost_thb', 'ค่าใช้จ่าย (บาท)', 'number'], ['downtime_min', 'Downtime (นาที)', 'number'], ['start_at', 'เริ่ม', 'datetime-local'], ['end_at', 'เสร็จ', 'datetime-local']];
+function editForm(q) {
+  const fields = [...EDIT_BASE, ...(isAdmin() ? EDIT_ADMIN : []), ...(isAdmin() && q.status === 'closed' ? EDIT_CLOSED : [])];
+  const val = (k, t) => q[k] == null ? '' : t === 'datetime-local' ? localInput(q[k]) : q[k];
+  const field = ([k, l, t]) => `<div class="field ${t === 'area' ? 'full' : ''}"><label for="ed-${k}">${l}</label>${
+    t === 'machine' ? `<select id="ed-${k}" class="inp">${D.machines.map(m => `<option value="${esc(m.machine_no)}" ${m.machine_no === q.machine_no ? 'selected' : ''}>${esc(m.machine_no)} · ${esc(m.machine_name)}</option>`).join('')}</select>`
+    : Array.isArray(t) ? `<select id="ed-${k}" class="inp">${opts(t, q[k])}</select>`
+    : t === 'area' ? `<textarea id="ed-${k}" class="inp" rows="2">${esc(val(k, t))}</textarea>`
+    : `<input id="ed-${k}" class="inp" type="${t}" ${t === 'number' ? 'min="0" step="any"' : ''} value="${esc(val(k, t))}">`}</div>`;
+  modal(`<h2>แก้ไขใบงาน ${esc(q.id)}</h2>
+    ${isAdmin() ? '' : '<p class="sub" style="margin-top:0">แก้ได้จนกว่า Foreman Day จะอนุมัติ</p>'}
+    <form id="fEdit" class="form">${fields.map(field).join('')}
+    <div class="full btns"><button class="btn" type="submit" id="edSave">บันทึก</button><button class="btn ghost" type="button" data-close>ยกเลิก</button></div></form>`);
+  $('#fEdit').onsubmit = async e => {
+    e.preventDefault();
+    const patch = {}, changed = [];
+    for (const [k, l, t] of fields) {
+      let v = $('#ed-' + k).value.trim();
+      v = v === '' ? null : t === 'number' ? Number(v) : t === 'datetime-local' ? new Date(v).toISOString() : v;
+      const old = q[k] == null ? null : t === 'number' ? Number(q[k]) : t === 'datetime-local' ? new Date(q[k]).toISOString() : String(q[k]);
+      if (v !== old) { patch[k] = v; changed.push(l); }
+    }
+    if ('symptom' in patch && !patch.symptom) return toast('กรอกอาการที่พบ');
+    if (!changed.length) { closeModal(); return toast('ไม่มีการเปลี่ยนแปลง'); }
+    $('#edSave').disabled = true;
+    const { error } = await sb.from('requests').update(patch).eq('id', q.id);
+    if (error) { $('#edSave').disabled = false; return fail(error); }
+    await addLog(q.id, 'แก้ไขข้อมูล: ' + changed.join(', '));
+    closeModal(); toast('บันทึกการแก้ไขแล้ว'); await loadAll(); openDetail(q.id, false);
+  };
+}
+function deleteForm(q) {
+  modal(`<h2>ลบใบงาน ${esc(q.id)}</h2>
+    <p>ใบงาน ประวัติการดำเนินการ และไฟล์แนบทั้งหมดจะถูกลบถาวร <b>กู้คืนไม่ได้</b></p>
+    <p class="sub">ถ้าเป็นใบงานจริงที่ไม่ต้องทำต่อ ควร Export Excel เก็บไว้ก่อน</p>
+    <div class="field"><label for="delConfirm">พิมพ์เลขที่ใบงาน <b>${esc(q.id)}</b> เพื่อยืนยัน</label><input id="delConfirm" class="inp" autocomplete="off"></div>
+    <div class="btns" style="margin-top:12px"><button class="btn bad" id="delGo" disabled>ลบถาวร</button><button class="btn ghost" data-close>ยกเลิก</button></div>`);
+  $('#delConfirm').oninput = e => { $('#delGo').disabled = e.target.value.trim() !== q.id; };
+  $('#delGo').onclick = async () => {
+    $('#delGo').disabled = true;
+    const paths = [...(q.photos || []), ...(q.attachments || []).map(a => a.path)].filter(Boolean);
+    const { data, error } = await sb.from('requests').delete().eq('id', q.id).select();
+    if (error || !data?.length) { $('#delGo').disabled = false; return fail(error || { message: 'ลบไม่สำเร็จ (ไม่มีสิทธิ์ หรือใบงานถูกลบไปแล้ว)' }); }
+    if (paths.length) { try { await sb.storage.from('request-photos').remove(paths); } catch (x) { /* ไฟล์ค้างไม่กระทบการใช้งาน */ } }
+    closeModal(); toast('ลบ ' + q.id + ' แล้ว'); S.sel = null; S.view = 'list'; await loadAll(); render();
+  };
+}
+
 /* ---------- modal ---------- */
 function modal(html) { closeModal(); const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.id = 'modal'; bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`; bg.onclick = e => { if (e.target === bg || e.target.hasAttribute('data-close')) closeModal(); }; document.body.appendChild(bg); }
 function closeModal() { $('#modal')?.remove(); }
@@ -962,6 +1015,8 @@ function bind() {
   $$('[data-act]').forEach(b => b.onclick = () => act(b.dataset.act));
   $$('[data-doc]').forEach(b => b.onclick = () => openDoc(b.dataset.doc));
   $$('[data-docdel]').forEach(b => b.onclick = () => delDoc(b.dataset.docdel, b));
+  $('#qEdit') && ($('#qEdit').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) editForm(q); });
+  $('#qDel') && ($('#qDel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) deleteForm(q); });
   $$('[data-scan]').forEach(a => a.onclick = e => { e.preventDefault(); openScan(a.dataset.scan); });
   $$('[data-newfor]').forEach(b => b.onclick = () => { S.prefill = b.dataset.newfor; S.view = 'new'; render(); window.scrollTo(0, 0); });
   $$('[data-qr]').forEach(b => b.onclick = () => printQR([M(b.dataset.qr)]));

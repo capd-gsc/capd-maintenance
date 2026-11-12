@@ -101,6 +101,12 @@ revoke select on public.pmcal_reminders from anon;
 revoke execute on function public.ensure_pmcal_jobs() from anon;
 
 -- ---------- 3. ตรวจสิทธิ์ทุกขั้นของใบงาน ----------
+create or replace function public.only_report_fields_changed(o public.requests, n public.requests) returns boolean
+language sql immutable as $$
+  select (to_jsonb(n) - array['machine_no','symptom','first_fix','urgency','attachments','technician','updated_at'])
+       = (to_jsonb(o) - array['machine_no','symptom','first_fix','urgency','attachments','technician','updated_at'])
+$$;
+
 create or replace function public.guard_request() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
@@ -140,6 +146,9 @@ begin
   if new.status = old.status then
     -- อัปเดตข้อมูลโดยไม่เปลี่ยนขั้น
     ok := case old.status
+      -- ผู้เปิดใบงานแก้ข้อมูลแจ้งซ่อมได้ จนกว่า FD จะอนุมัติ (ช่องอื่นต้องไม่เปลี่ยน)
+      when 'pending_fd'    then me = old.reporter and public.only_report_fields_changed(old, new)
+      when 'returned'      then me = old.reporter and public.only_report_fields_changed(old, new)
       when 'memo_approval' then me = step_app and new.memo_step = old.memo_step + 1 and new.memo_step < coalesce(array_length(old.memo_approvers, 1), 0)
       when 'quotation'     then me = old.assignee or r = 'foreman_day'
       when 'memo_rejected' then me = old.assignee or r = 'foreman_day'
@@ -264,11 +273,13 @@ create policy presets_admin on public.role_presets for all to authenticated usin
 
 drop policy if exists "photos read" on storage.objects;
 drop policy if exists "photos upload" on storage.objects;
+drop policy if exists "photos delete" on storage.objects;
 drop policy if exists "docs read" on storage.objects;
 drop policy if exists "docs write" on storage.objects;
 drop policy if exists "docs delete" on storage.objects;
 create policy "photos read" on storage.objects for select to authenticated using (bucket_id = 'request-photos' and public.cur_member());
 create policy "photos upload" on storage.objects for insert to authenticated with check (bucket_id = 'request-photos' and public.cur_member());
+create policy "photos delete" on storage.objects for delete to authenticated using (bucket_id = 'request-photos' and public.cur_admin());
 create policy "docs read" on storage.objects for select to authenticated
   using (bucket_id = 'documents' and public.cur_member() and (name not like 'restricted/%' or public.cur_admin() or public.cur_role() in ('foreman_day','manager')));
 create policy "docs write" on storage.objects for insert to authenticated

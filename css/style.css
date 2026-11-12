@@ -294,3 +294,4 @@ tr.off td{opacity:.55}
 .mlbl{font-size:10.5px;color:var(--muted);white-space:nowrap}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;margin-top:8px;align-items:center}
 .legend i{display:inline-block;width:10px;height:10px;margin-right:5px;vertical-align:-1px}
+.btn.ghost.bad-t{color:var(--bad);border-color:var(--bad)}
