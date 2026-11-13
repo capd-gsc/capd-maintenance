@@ -4,7 +4,7 @@
 (() => {
 'use strict';
 const C = window.APP_CONFIG;
-const SCAN_KEY = 'capd-pending-machine', TRIAL_KEY = 'capd-trial-user';
+const SCAN_KEY = 'capd-pending-machine', JOB_KEY = 'capd-pending-job', TRIAL_KEY = 'capd-trial-user';
 // โหมดทดลอง (ก่อน IT ตั้งค่า Microsoft 365): ส่งอีเมลที่กรอกไปใน header ให้ฐานข้อมูลใช้แทน Login จริง (supabase/v3_trial_on.sql)
 let TRIAL_USER = null; try { if (C.TRIAL_LOGIN) TRIAL_USER = localStorage.getItem(TRIAL_KEY); } catch (e) {}
 const sb = window.supabase.createClient(C.SUPABASE_URL, C.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }, global: { headers: TRIAL_USER ? { 'x-capd-user': TRIAL_USER } : {} } });
@@ -61,6 +61,9 @@ const IC = {
 /* ---------- state ---------- */
 let PENDING_M = new URLSearchParams(location.search).get('m');
 try { if (PENDING_M) sessionStorage.setItem(SCAN_KEY, PENDING_M); else PENDING_M = sessionStorage.getItem(SCAN_KEY); } catch (e) {}
+// ลิงก์จากอีเมล / Teams: ?job=MR-…  (จำไว้ระหว่างไป Login)
+let PENDING_J = new URLSearchParams(location.search).get('job');
+try { if (PENDING_J) sessionStorage.setItem(JOB_KEY, PENDING_J); else PENDING_J = sessionStorage.getItem(JOB_KEY); } catch (e) {}
 const S = { me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
 const D = { machines: [], requests: [], profiles: [], docs: [] };
 
@@ -575,19 +578,20 @@ const VIEWS = {
   },
 
   admin() {
+    const hasNotify = D.profiles.some(p => 'notify_email' in p);
     const fdSel = (id, v, dis) => `<select id="${id}" class="inp" ${dis ? 'disabled' : ''}><option value="">สำรองทุกประเภท</option>${opts(OPT.fdType, v)}</select>`;
     return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน · ใช้งาน ${activeUsers().length}</span>
       <label class="btn ghost" for="uImport" style="cursor:pointer">นำเข้าผู้ใช้จาก Excel</label><input id="uImport" type="file" accept=".xlsx,.xls" hidden><button class="btn" id="backupBtn">สำรองข้อมูลทั้งหมด</button></div>
     <div class="note" style="margin-bottom:14px">กด <b>สำรองข้อมูลทั้งหมด</b> สัปดาห์ละครั้ง แล้วเก็บไฟล์ไว้ในโฟลเดอร์ของแผนก (ใบงาน, ประวัติ, เครื่องจักร, ผู้ใช้, เอกสาร อยู่ในไฟล์ Excel เดียว) · ไฟล์รูปและเอกสารแนบไม่รวมอยู่ในไฟล์นี้</div>
     <div class="note" style="margin-bottom:14px">ผู้ใช้เข้าระบบด้วยบัญชี Microsoft 365 ของบริษัท เฉพาะอีเมลในรายการนี้ที่ติ๊ก “ใช้งาน” เท่านั้นที่เข้าได้ · Foreman Day รับใบงานตามประเภทเครื่อง (Mold / อื่นๆ ใช้ของเครื่องจักร)</div>
-    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th><th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th>${hasNotify ? '<th>รับอีเมล</th>' : ''}<th></th></tr></thead><tbody>
     ${D.profiles.map((p, i) => `<tr class="${p.active === false ? 'off' : ''}"><td>${esc(p.email)}</td>
       <td><label class="sr" for="pn${i}">ชื่อ</label><input id="pn${i}" class="inp" value="${esc(p.full_name || '')}"></td>
       <td><label class="sr" for="pr${i}">บทบาท</label><select id="pr${i}" class="inp" data-rolesel="${i}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td><label class="sr" for="pf${i}">Foreman Day ดูแลประเภท</label>${fdSel('pf' + i, p.fd_type, p.role !== 'foreman_day')}</td>
       <td class="c"><label class="sr" for="pa${i}">สิทธิ์ Admin</label><input id="pa${i}" type="checkbox" ${p.is_admin || p.role === 'admin' ? 'checked' : ''} ${p.role === 'admin' ? 'disabled' : ''}></td>
       <td class="c"><label class="sr" for="pm${i}">อนุมัติ MEMO</label><input id="pm${i}" type="checkbox" ${p.memo_approver ? 'checked' : ''}></td>
-      <td class="c"><label class="sr" for="pact${i}">ใช้งาน</label><input id="pact${i}" type="checkbox" ${p.active !== false ? 'checked' : ''}></td>
+      <td class="c"><label class="sr" for="pact${i}">ใช้งาน</label><input id="pact${i}" type="checkbox" ${p.active !== false ? 'checked' : ''}></td>${hasNotify ? `<td class="c"><label class="sr" for="pne${i}">รับอีเมลแจ้งเตือน</label><input id="pne${i}" type="checkbox" ${p.notify_email !== false ? 'checked' : ''}></td>` : ''}
       <td class="row-actions"><button class="btn sm" data-psave="${i}">บันทึก</button><button class="btn ghost sm" data-pdel="${esc(p.email)}">ลบ</button></td></tr>`).join('')}
     </tbody></table></div>
     <h3 class="sec">เพิ่มผู้ใช้</h3>
@@ -1021,8 +1025,13 @@ async function openDetail(id, scroll = true) {
 async function afterLogin() {
   try { await sb.rpc('ensure_pmcal_jobs'); } catch (e) { /* ignore */ }
   try { await loadAll(); } catch (e) { return fail(e); }
-  const no = PENDING_M; PENDING_M = null; S.view = 'home';
-  try { sessionStorage.removeItem(SCAN_KEY); } catch (e) {}
+  const no = PENDING_M, jid = PENDING_J; PENDING_M = PENDING_J = null; S.view = 'home';
+  try { sessionStorage.removeItem(SCAN_KEY); sessionStorage.removeItem(JOB_KEY); } catch (e) {}
+  if (jid) {
+    try { history.replaceState(null, '', location.pathname); } catch (e) {}
+    if (D.requests.some(q => q.id === jid)) { subscribe(); return openDetail(jid); }
+    toast('ไม่พบใบงาน ' + jid);
+  }
   if (no) {
     try { history.replaceState(null, '', location.pathname); } catch (e) {}
     if (D.machines.some(m => m.machine_no === no)) { S.scanNo = no; S.view = 'scan'; } else toast('ไม่พบเครื่อง ' + no + ' ในระบบ');
@@ -1401,6 +1410,7 @@ function bind() {
   $$('[data-psave]').forEach(b => b.onclick = async () => {
     const i = b.dataset.psave, p = D.profiles[i];
     const row = { full_name: $('#pn' + i).value.trim() || null, role: $('#pr' + i).value, fd_type: $('#pf' + i).value || null, is_admin: $('#pa' + i).checked, memo_approver: $('#pm' + i).checked, active: $('#pact' + i).checked };
+    if ($('#pne' + i)) row.notify_email = $('#pne' + i).checked;
     if (row.role !== 'foreman_day') row.fd_type = null;
     if (admins(D.profiles.map(x => x.email === p.email ? { ...x, ...row } : x)) < 1) return toast('ต้องมีผู้ดูแลระบบ (Admin) อย่างน้อย 1 คน');
     if (p.email === S.me.email && !(row.role === 'admin' || row.is_admin) ) return toast('นำสิทธิ์ Admin ของตัวเองออกไม่ได้ ให้ Admin คนอื่นทำ');

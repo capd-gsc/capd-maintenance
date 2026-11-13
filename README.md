@@ -21,8 +21,9 @@ supabase/v3_3_cancel.sql       ยกเลิกใบงาน (ติดต�
 tests/                         ชุดทดสอบอัตโนมัติ (ดู tests/README.md)
 tools/bump-version.sh          เปลี่ยนเลขเวอร์ชันใน index.html ก่อนขึ้นเว็บ
 docs/IT-Microsoft-Login.md     ขั้นตอนที่ IT ต้องตั้งค่า (ส่งไฟล์นี้ให้ IT)
-supabase/functions/pmcal-reminders/  อีเมลเตือน PM/CAL รายวัน
-supabase/schedule_reminders.sql ตั้งเวลาส่งอีเมลทุกวัน 08:00
+supabase/functions/notify/      แจ้งเตือนอีเมล + Teams (core.ts, index.ts · single-file.ts สำหรับวางใน Supabase)
+supabase/schedule_notify.sql    ตั้งเวลาส่งแจ้งเตือน (ทุก 1 นาที + สรุป 08:00)
+supabase/v3_4_notify.sql        คิวแจ้งเตือน
 ```
 
 ## ติดตั้งฐานข้อมูล
@@ -95,31 +96,13 @@ Admin ตั้งค่าเพิ่มให้ผู้ใช้แต่�
    - ระบบเปิดใบงานให้อัตโนมัติเมื่อเหลือ 90 วันก่อนครบกำหนด
    - เมื่อปิดงาน ระบบอัปเดตวันที่ทำ PM/CAL ล่าสุดของเครื่องให้
 
-## การแจ้งเตือน PM/CAL
-- **ขั้น 1 (≤ 3 เดือน):** Member ผู้รับผิดชอบ
-- **ขั้น 2 (≤ 2 เดือน):** + Foreman Day
-- **ขั้น 3 (≤ 1 เดือน):** + Manager
-- ส่งอีเมล **ทุกวัน** จนกว่า Member จะกด **"เริ่มดำเนินการแล้ว"** ในใบงาน (หรือส่ง MEMO)
-- ขั้น 2 ส่งถึง Foreman Day ตามประเภทของเครื่อง
-- ในเว็บมีแถบเตือนสีแดงที่หน้าหลักของผู้ที่เกี่ยวข้องอยู่แล้ว
-- อีเมลยังต้องตั้งค่าเพิ่ม ดูหัวข้อถัดไป
-
-### เปิดอีเมลเตือน (ทำครั้งเดียว · ยังไม่ได้ทดสอบกับระบบจริง)
-1. **สมัคร Brevo (ฟรี 300 ฉบับ/วัน)** ที่ brevo.com
-   - ยืนยันอีเมลผู้ส่งที่ **Senders**
-   - สร้าง API key ที่ **SMTP & API → API Keys**
-2. **สร้าง Edge Function** ใน Supabase ที่ **Edge Functions → Deploy a new function → Via Editor**
-   - ตั้งชื่อ `pmcal-reminders`
-   - วางโค้ดจาก `supabase/functions/pmcal-reminders/index.ts` แล้วกด Deploy
-   - ใน **Details** ของฟังก์ชัน ให้**ปิด Verify JWT**
-3. **ตั้ง Secrets** ที่ **Edge Functions → Secrets**
-   - `BREVO_API_KEY`
-   - `MAIL_FROM` (อีเมลผู้ส่งที่ยืนยันแล้ว)
-   - `APP_URL` = `https://capd-gsc.github.io/capd-maintenance/`
-   - `CRON_SECRET` (ตั้งข้อความยาวๆ เอง)
-4. **ตั้งเวลาส่ง**
-   - ที่ **Database → Extensions** เปิด `pg_cron` และ `pg_net`
-   - รัน `supabase/schedule_reminders.sql` โดยใส่ค่า `CRON_SECRET` เดียวกับข้อ 3
+## การแจ้งเตือน (อีเมล + Teams)
+- **ใบงานเปลี่ยนขั้น:** คนที่ต้องทำต่อได้อีเมลพร้อมลิงก์เปิดใบงาน และช่อง Teams ของแผนกได้การ์ดบอกว่างานรอใคร
+- **ทุกเช้า 08:00 น.:**
+  - เตือน PM/CAL: ขั้น 1 (≤ 3 เดือน) ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน) + Foreman Day · ขั้น 3 (≤ 1 เดือน) + Manager
+  - ช่อง Teams ได้สรุปใบงานที่ค้างเกิน 3 วัน
+- **หยุดเตือน PM/CAL:** Member กด **เริ่มดำเนินการแล้ว** ในใบงาน
+- **ขั้นตอนตั้งค่า:** อยู่ใน [`docs/Notifications-Setup.md`](docs/Notifications-Setup.md)
 
 ## QR Code ติดเครื่องจักร
 - **พิมพ์:** Admin ไปที่ **เครื่องจักร → พิมพ์ QR ทั้งหมด** (หรือกดปุ่ม **QR** รายเครื่อง)
@@ -165,7 +148,7 @@ Admin ตั้งค่าเพิ่มให้ผู้ใช้แต่�
 - พลังงานไฟฟ้า
 - ค่าใช้จ่ายอื่น
 - รายงาน Interactive
-- อีเมลเตือน (ทดสอบกับระบบจริง)
+- ~~อีเมลเตือน~~ ทำแล้ว (v3.4) รอตั้งค่า Brevo / Teams
 
 ## อัปเดตระบบ (สำหรับผู้ดูแล)
 1. รันชุดทดสอบ `tests/` ให้ผ่านทั้งหมด

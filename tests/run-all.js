@@ -5,7 +5,7 @@ const { Client } = require('pg');
 const env = require('./lib/env.js');
 const OUT = path.join(__dirname, 'out');
 
-const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql'];
+const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql'];
 const SUITES = [
   { name: 'sql-guard', mode: 'guard' },
   { name: '01-main-flow', mode: 'full' },
@@ -16,7 +16,8 @@ const SUITES = [
   { name: '06-quotes-memo', mode: 'trial' },
   { name: '07-attachments', mode: 'trial' },
   { name: '08-layout', mode: 'trial' },
-  { name: '09-cancel-backup-refresh', mode: 'trial' }
+  { name: '09-cancel-backup-refresh', mode: 'trial' },
+  { name: '10-notify', mode: 'trial' }
 ];
 
 async function resetDb(mode) {
@@ -50,7 +51,8 @@ async function resetDb(mode) {
       const blocked = await resetDb(s.mode);
       if (s.mode === 'guard') { pass = blocked.length; if (pass < 14) fail.push(`expected 14 blocked attempts, got ${pass}`); }
       else {
-        const r = spawnSync(process.execPath, [path.join(__dirname, 'e2e', s.name + '.js')], { cwd: OUT, env: { ...process.env, NODE_PATH }, encoding: 'utf8', timeout: 300e3 });
+        const file = ['.js', '.mjs'].map(x => path.join(__dirname, 'e2e', s.name + x)).find(f => fs.existsSync(f));
+        const r = spawnSync(process.execPath, [file], { cwd: OUT, env: { ...process.env, NODE_PATH }, encoding: 'utf8', timeout: 300e3 });
         const lines = (r.stdout || '').split('\n');
         pass = lines.filter(l => l.startsWith('PASS')).length;
         fail = lines.filter(l => l.startsWith('FAIL'));
