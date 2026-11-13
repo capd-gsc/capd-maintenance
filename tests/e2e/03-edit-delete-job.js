@@ -1,0 +1,36 @@
+// 03-edit-delete-job.js — run through tests/run-all.js (it prepares the database and fixtures)
+const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');
+(async()=>{const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
+const row=async(s,a)=>(await db.query(s,a)).rows;
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
+await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));
+await p.route('**/xlsx.full.min.js',r=>r.fulfill({body:fs.readFileSync(require.resolve('xlsx/dist/xlsx.full.min.js'),'utf8'),contentType:'application/javascript'}));
+await p.route('**/qrcode.js',r=>r.fulfill({body:fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'),'utf8'),contentType:'application/javascript'}));
+await p.route('**fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
+await p.goto(require('../lib/env.js').url);await p.waitForTimeout(400);const W=ms=>p.waitForTimeout(ms||400);
+const ok=(c,l)=>console.log((c?'PASS ':'FAIL ')+l);
+const as=async e=>{if(await p.locator('#logout').count()){await p.click('#logout');await W(600)}await p.fill('#trEmail',e);await p.click('#fTrial button');await W(800)};
+const open=async id=>{await p.click('.side-nav [data-nav="list"]');await W(150);await p.click('[data-filter="all"]');await W(150);await p.click(`tr[data-open="${id}"]`);await W(400)};
+const J=async id=>(await row('select * from requests where id=$1',[id]))[0];
+const H={'x-capd-user':'user05@scg.com'};
+
+await as('user05@scg.com');
+await p.click('.side-nav [data-nav="new"]');await W(150);await p.selectOption('#nMachine','M-01');await p.fill('#nSym','มอเตอร์ไม่หมุน');await p.click('#bSubmit');await W(600);
+const A=(await p.textContent('.h-row h1')).trim();
+ok(await p.locator('#qEdit').count()===1,'reporter sees แก้ไข while pending');ok(await p.locator('#qDel').count()===0,'reporter has no ลบ button');
+await p.click('#qEdit');await W(200);await p.fill('#ed-symptom','มอเตอร์ไม่หมุน มีกลิ่นไหม้');await p.selectOption('#ed-machine_no','T-01');await p.selectOption('#ed-urgency','Critical');await p.screenshot({path:'edit.png'});await p.click('#edSave');await W(600);
+let a=await J(A);ok(a.symptom==='มอเตอร์ไม่หมุน มีกลิ่นไหม้'&&a.machine_no==='T-01'&&a.urgency==='Critical','reporter edit saved (symptom, machine, urgency)');
+ok((await row('select action from request_logs where request_id=$1 order by at desc limit 1',[A]))[0].action.startsWith('แก้ไขข้อมูล: '),'edit logged: '+(await row('select action from request_logs where request_id=$1 order by at desc limit 1',[A]))[0].action);
+const forged=await q({op:'update',t:'requests',payload:{cost_thb:999},f:[['id',A]],order:[],email:'',headers:H});ok(forged.error,'DB blocks reporter changing other fields');
+const other=await q({op:'update',t:'requests',payload:{symptom:'x'},f:[['id',A]],order:[],email:'',headers:{'x-capd-user':'user14@scg.com'}});ok(other.error,'DB blocks non-reporter edit');
+await as('user03@scg.com');await open(A);await p.click('input[name=apType][value=RMT]');await p.click('[data-act=fd_approve]');await W(500);
+await as('user05@scg.com');await open(A);ok(await p.locator('#qEdit').count()===0,'reporter loses แก้ไข after FD approves');
+const late=await q({op:'update',t:'requests',payload:{symptom:'y'},f:[['id',A]],order:[],email:'',headers:H});ok(late.error,'DB blocks reporter edit after approval');
+await as('user01@scg.com');await open(A);ok(await p.locator('#qEdit').count()===1&&await p.locator('#qDel').count()===1,'admin sees แก้ไข + ลบ');
+await p.click('#qEdit');await W(200);await p.fill('#ed-external_ref','SAP-555');await p.click('#edSave');await W(600);ok((await J(A)).external_ref==='SAP-555'&&(await J(A)).status==='wait_admin','admin edit saved, status unchanged');
+const del2=await q({op:'delete',t:'requests',f:[['id',A]],order:[],email:'',headers:H,ret:true});ok(!del2.data?.length,'DB blocks non-admin delete');
+await p.click('#qDel');await W(200);ok(await p.isDisabled('#delGo'),'delete disabled until id typed');await p.fill('#delConfirm',A);await p.click('#delGo');await W(700);
+ok(!(await J(A))&&(await row('select count(*)::int n from request_logs where request_id=$1',[A]))[0].n===0,'admin deleted job and its history');
+ok((await p.textContent('.h-row h1')).includes('ใบงานทั้งหมด'),'returns to job list');
+console.log('errors',errs);await b.close();await db.end();process.exit(0);})();

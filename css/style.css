@@ -61,6 +61,7 @@ a{color:var(--link)}
 .tb-title b{display:block;font-family:var(--f-display);font-size:17px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-title small{display:block;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tb-title>div{min-width:0}
+.tb-title>div{display:none}
 .topb .sp,.sp{flex:1}
 .who{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.3;padding:0 4px}
 .who small{display:block;color:var(--muted);font-size:12px}
@@ -352,6 +353,9 @@ tr.chosen td{background:var(--ok-bg)}
   .topb{padding:10px 12px;padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));min-height:58px;background:var(--panel);backdrop-filter:none}
   .topb .iconbtn{width:38px;height:38px}
   .tb-title b{font-size:16px}
+  .tb-title>div{display:block}
+  .main .h-row h1{display:none}
+  .main .h-row{justify-content:flex-start}
   .main{padding:14px 14px calc(96px + env(safe-area-inset-bottom,0px));padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
   .bnav{display:grid;grid-template-columns:repeat(5,1fr);position:fixed;left:0;right:0;bottom:0;z-index:8;background:var(--panel);border-top:1px solid var(--line);padding:6px 4px calc(8px + env(safe-area-inset-bottom,0px));padding-left:max(4px,env(safe-area-inset-left,0px));padding-right:max(4px,env(safe-area-inset-right,0px))}
   .bnav button{border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);padding:4px 0;cursor:pointer;position:relative}

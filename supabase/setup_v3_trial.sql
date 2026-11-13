@@ -293,6 +293,8 @@ begin
     when old.status = 'ext_repair'    and new.status = 'closed'                       then public.can_fd(old.machine_no)
     when old.status in ('quotation','memo_rejected') and new.status = 'memo_approval' then me = old.assignee or adm or r = 'foreman_day'
     when old.status = 'memo_approval' and new.status in ('po_vendor','memo_rejected') then me = step_app
+    -- ยกเลิกใบงาน (ต้องมีเหตุผล): Admin ทุกสถานะที่ยังเปิด · ผู้เปิดใบงานเฉพาะก่อน FD อนุมัติ
+    when new.status = 'cancelled' and old.status not in ('closed','cancelled')     then coalesce(btrim(new.return_note), '') <> '' and (adm or (me = old.reporter and old.status in ('pending_fd','returned')))
     when old.status = 'po_vendor'     and new.status = 'closed'                       then (me = old.assignee or adm or public.can_fd(old.machine_no)) and coalesce(new.po_no, '') <> ''
     else false end;
   if not ok then raise exception 'ไม่มีสิทธิ์เปลี่ยนสถานะจาก % เป็น %', old.status, new.status; end if;
@@ -300,6 +302,7 @@ begin
   -- บันทึกผู้ทำรายการจากฐานข้อมูล ไม่เชื่อค่าที่ส่งมาจากหน้าเว็บ
   if old.status = 'pending_fd' and new.status <> 'returned' then new.approved_by := me; new.approved_at := now(); end if;
   if new.status = 'closed' then new.closed_by := me; new.end_at := coalesce(new.end_at, now()); end if;
+  if new.status = 'cancelled' then new.closed_by := me; end if;
   -- ส่ง MEMO: Vendor และราคาในใบงานมาจากใบเสนอราคาที่เลือก · ผู้ขออนุมัติและวันที่บันทึกโดยระบบ
   if new.status = 'memo_approval' and old.status <> 'memo_approval' then
     if jsonb_array_length(coalesce(new.quotes, '[]')) > 0 then

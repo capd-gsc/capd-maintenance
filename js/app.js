@@ -298,6 +298,7 @@ const CRUMBS = { home: 'หน้าหลัก', new: 'แจ้งซ่อ�
 const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (S.view === 'scan' && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
+  dirty = false; lastSync = Date.now();
   const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list'].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
   const sub = S.view === 'detail' ? S.sel : S.view === 'scan' ? S.scanNo : esc(roleText(S.me));
   const back = ['detail', 'scan'].includes(S.view);
@@ -306,7 +307,7 @@ function render() {
     <aside class="side" aria-label="เมนูหลัก">
       <div class="brand">${LOGO}<span>CAPD <b>Maintenance</b><small>${esc(C.ORG)}</small></span></div>
       <nav class="side-nav">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</nav>
-      <div class="side-foot">${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}<span class="sub">${esc(C.APP_NAME)} · ${esc(C.ORG)}</span></div>
+      <div class="side-foot">${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}<span class="sub">${esc(C.APP_NAME)} · ${esc(C.ORG)}${window.APP_VERSION ? " · v" + esc(window.APP_VERSION) : ""}</span></div>
     </aside>
     <div class="content">
       <header class="topb">
@@ -473,7 +474,7 @@ const VIEWS = {
     const m = M(q.machine_no);
     const kv = (k, v) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}</dd>`;
     const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => `<span class="attw">${/\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`}${canRemoveAtt(q, x) ? `<button class="attx" data-attdel="${esc(x.path)}" title="ลบไฟล์ ${esc(x.name)}" aria-label="ลบไฟล์ ${esc(x.name)}">×</button>` : ''}</span>`).join('')}</div>` : ''; }).join('') : '';
-    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
+    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${canCancel(q) ? '<button class="btn ghost bad-t" id="qCancel">ยกเลิกใบงาน</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
     ${stepsHtml(q)}
     <div class="detail">
       <div class="stack">
@@ -495,7 +496,8 @@ const VIEWS = {
           ${kv('เลขที่ MEMO', esc(q.memo_no))}
           ${kv('เลขที่ PO', esc(q.po_no))}
           ${kv('วันนัด Vendor', q.vendor_date ? fd(q.vendor_date) : '')}
-          ${kv('หมายเหตุส่งกลับ', q.return_note ? `<span class="u-Critical">${esc(q.return_note)}</span>` : '')}
+          ${kv(q.status === 'cancelled' ? 'เหตุผลที่ยกเลิก' : 'หมายเหตุส่งกลับ', q.return_note ? `<span class="u-Critical">${esc(q.return_note)}</span>` : '')}
+          ${q.status === 'cancelled' ? kv('ยกเลิกโดย', esc(nm(q.closed_by))) : ''}
           ${OPEN(q.status) ? kv('ผู้ดำเนินการถัดไป', `<b>${esc(ownerText(q))}</b>`) : ''}
         </dl></div>
         ${q.quotes?.length && !(OPEN(q.status) && ['quotation', 'memo_rejected', 'memo_approval'].includes(q.status) && isMine(q)) ? `<div class="box"><h3>เทียบใบเสนอราคา (${q.quotes.length})</h3>${quoteTable(q)}</div>` : ''}
@@ -575,7 +577,8 @@ const VIEWS = {
   admin() {
     const fdSel = (id, v, dis) => `<select id="${id}" class="inp" ${dis ? 'disabled' : ''}><option value="">สำรองทุกประเภท</option>${opts(OPT.fdType, v)}</select>`;
     return `<div class="h-row"><h1>ผู้ใช้และสิทธิ์</h1><span class="sub">${D.profiles.length} คน · ใช้งาน ${activeUsers().length}</span>
-      <label class="btn ghost" for="uImport" style="cursor:pointer">นำเข้าผู้ใช้จาก Excel</label><input id="uImport" type="file" accept=".xlsx,.xls" hidden></div>
+      <label class="btn ghost" for="uImport" style="cursor:pointer">นำเข้าผู้ใช้จาก Excel</label><input id="uImport" type="file" accept=".xlsx,.xls" hidden><button class="btn" id="backupBtn">สำรองข้อมูลทั้งหมด</button></div>
+    <div class="note" style="margin-bottom:14px">กด <b>สำรองข้อมูลทั้งหมด</b> สัปดาห์ละครั้ง แล้วเก็บไฟล์ไว้ในโฟลเดอร์ของแผนก (ใบงาน, ประวัติ, เครื่องจักร, ผู้ใช้, เอกสาร อยู่ในไฟล์ Excel เดียว) · ไฟล์รูปและเอกสารแนบไม่รวมอยู่ในไฟล์นี้</div>
     <div class="note" style="margin-bottom:14px">ผู้ใช้เข้าระบบด้วยบัญชี Microsoft 365 ของบริษัท เฉพาะอีเมลในรายการนี้ที่ติ๊ก “ใช้งาน” เท่านั้นที่เข้าได้ · Foreman Day รับใบงานตามประเภทเครื่อง (Mold / อื่นๆ ใช้ของเครื่องจักร)</div>
     <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th><th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th><th></th></tr></thead><tbody>
     ${D.profiles.map((p, i) => `<tr class="${p.active === false ? 'off' : ''}"><td>${esc(p.email)}</td>
@@ -1312,6 +1315,37 @@ function editForm(q) {
     closeModal(); toast('บันทึกการแก้ไขแล้ว'); await loadAll(); openDetail(q.id, false);
   };
 }
+// ยกเลิกใบงาน: ใบงานและประวัติยังอยู่ (ต่างจากลบ) · Admin ทุกสถานะที่ยังเปิด · ผู้เปิดก่อน FD อนุมัติ
+const canCancel = q => OPEN(q.status) && (isAdmin() || (q.reporter === S.me.email && ['pending_fd', 'returned'].includes(q.status)));
+function cancelForm(q) {
+  modal(`<h2>ยกเลิกใบงาน ${esc(q.id)}</h2>
+    <p style="margin-top:0">ใบงานจะเปลี่ยนเป็น <b>ยกเลิก</b> และหยุดอยู่ที่ขั้นนี้ ประวัติและไฟล์แนบยังเก็บไว้ครบ</p>
+    <div class="field"><label for="cxNote">เหตุผลที่ยกเลิก *</label><input id="cxNote" class="inp" placeholder="เช่น เปิดซ้ำกับ MR-…, เครื่องกลับมาใช้งานได้เอง"></div>
+    <div class="btns" style="margin-top:14px"><button class="btn bad" id="cxGo">ยกเลิกใบงาน</button><button class="btn ghost" data-close>ไม่ยกเลิก</button></div>`);
+  $('#cxGo').onclick = async () => {
+    const note = $('#cxNote').value.trim(); if (!note) return toast('กรอกเหตุผลที่ยกเลิก');
+    $('#cxGo').disabled = true;
+    const { error } = await sb.from('requests').update({ status: 'cancelled', return_note: note }).eq('id', q.id);
+    if (error) { $('#cxGo').disabled = false; return fail(error); }
+    await addLog(q.id, 'ยกเลิกใบงาน · ' + note);
+    closeModal(); toast('ยกเลิก ' + q.id + ' แล้ว'); await loadAll(); openDetail(q.id, false);
+  };
+}
+// สำรองข้อมูลทั้งหมดเป็น Excel ไฟล์เดียว (Admin)
+async function backupAll() {
+  const btn = $('#backupBtn'); if (btn) btn.disabled = true;
+  try {
+    const { data: logs, error } = await sb.from('request_logs').select('*').order('at');
+    if (error) throw error;
+    const flat = rows => rows.map(r => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, v != null && typeof v === 'object' ? JSON.stringify(v) : v])));
+    const wb = XLSX.utils.book_new();
+    [['requests', D.requests], ['request_logs', logs || []], ['machines', D.machines], ['app_users', D.profiles], ['documents', D.docs]]
+      .forEach(([n, rows]) => XLSX.utils.book_append_sheet(wb, rows.length ? XLSX.utils.json_to_sheet(flat(rows)) : XLSX.utils.aoa_to_sheet([['(ไม่มีข้อมูล)']]), n));
+    XLSX.writeFile(wb, 'CAPD-Backup-' + todayStr() + '.xlsx');
+    toast(`สำรองแล้ว: ใบงาน ${D.requests.length} · ประวัติ ${(logs || []).length} · เครื่อง ${D.machines.length} · ผู้ใช้ ${D.profiles.length}`);
+  } catch (e) { fail(e); } finally { if (btn) btn.disabled = false; }
+}
+
 function deleteForm(q) {
   modal(`<h2>ลบใบงาน ${esc(q.id)}</h2>
     <p>ใบงาน ประวัติการดำเนินการ และไฟล์แนบทั้งหมดจะถูกลบถาวร <b>กู้คืนไม่ได้</b></p>
@@ -1349,6 +1383,8 @@ function bind() {
   $$('input[name=qC], [id^=qA]').forEach(el => { el.addEventListener('change', authHint); el.addEventListener('input', authHint); });
   if ($('#authHint')) authHint();
   $('#qEdit') && ($('#qEdit').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) editForm(q); });
+  $('#qCancel') && ($('#qCancel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) cancelForm(q); });
+  $('#backupBtn') && ($('#backupBtn').onclick = backupAll);
   $('#qDel') && ($('#qDel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) deleteForm(q); });
   $$('[data-scan]').forEach(a => a.onclick = e => { e.preventDefault(); openScan(a.dataset.scan); });
   $$('[data-newfor]').forEach(b => b.onclick = () => { S.prefill = b.dataset.newfor; S.view = 'new'; render(); window.scrollTo(0, 0); });
@@ -1433,6 +1469,22 @@ function bind() {
 
 /* =================== BOOT =================== */
 let channel = null;
+// โหลดข้อมูลใหม่อัตโนมัติทุก 1 นาที และเมื่อกลับมาที่แท็บ · ไม่ทำตอนกำลังกรอกฟอร์มหรือเปิดหน้าต่างค้างไว้
+let lastSync = Date.now(), dirty = false;
+document.addEventListener('input', e => { if (e.target.closest('#main, #modal')) dirty = true; });
+async function autoSync(force = false) {
+  if (!S.me || document.hidden || $('#modal') || dirty || ['new'].includes(S.view)) return;
+  if (!force && Date.now() - lastSync < 55e3) return;
+  if (document.activeElement?.matches('input,textarea,select')) return;
+  lastSync = Date.now();
+  const y = window.scrollY;
+  try { await loadAll(); } catch (e) { return; }
+  if ($('#modal') || dirty) return;
+  if (S.view === 'detail') await openDetail(S.sel, false); else render();
+  window.scrollTo(0, y);
+}
+setInterval(() => autoSync(), 60e3);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastSync > 15e3) autoSync(true); });
 function subscribe() {
   if (!channel) channel = sb.channel('requests').on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
     loadAll().then(() => { if (!$('#modal') && !document.activeElement?.matches('input,textarea,select') && S.view !== 'detail') render(); });

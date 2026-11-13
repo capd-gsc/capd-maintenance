@@ -1,0 +1,34 @@
+// 02-trial-login.js — run through tests/run-all.js (it prepares the database and fixtures)
+const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');
+(async()=>{const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
+const row=async(s,a)=>(await db.query(s,a)).rows;
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
+await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));
+await p.route('**/xlsx.full.min.js',r=>r.fulfill({body:fs.readFileSync(require.resolve('xlsx/dist/xlsx.full.min.js'),'utf8'),contentType:'application/javascript'}));
+await p.route('**/qrcode.js',r=>r.fulfill({body:fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'),'utf8'),contentType:'application/javascript'}));
+await p.route('**fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
+const URL=require('../lib/env.js').url;
+await p.goto(URL);await p.waitForTimeout(400);const W=ms=>p.waitForTimeout(ms||400);
+const ok=(c,l)=>console.log((c?'PASS ':'FAIL ')+l);
+const as=async e=>{if(await p.locator('#logout').count()){await p.click('#logout');await W(600)}await p.fill('#trEmail',e);await p.click('#fTrial button');await W(800)};
+const st=async()=>(await p.textContent('.h-row .pill')).trim();
+const open=async id=>{await p.click('.side-nav [data-nav="list"]');await W(150);await p.click('[data-filter="all"]');await W(150);await p.click(`tr[data-open="${id}"]`);await W(400)};
+ok(await p.locator('#fTrial').count()===1&&await p.locator('#bMs').count()===1,'login shows trial form + Microsoft button');
+await p.screenshot({path:'login-trial.png'});
+await as('outsider@scg.com');ok((await p.textContent('.err')).includes('ยังไม่มีสิทธิ์'),'trial: unknown email rejected');
+await as('user05@scg.com');ok((await p.textContent('.side-foot')).includes('โหมดทดลอง'),'trial banner shown');
+await p.click('.side-nav [data-nav="new"]');await W(150);await p.selectOption('#nMachine','T-01');await p.fill('#nSym','ค่าเพี้ยน');await p.setInputFiles('#nPhoto','quote.pdf').catch(()=>{});await p.click('#bSubmit');await W(600);
+const A=(await p.textContent('.h-row h1')).trim();ok(/^MR-/.test(A),'trial FS created '+A);ok((await row('select reporter from requests where id=$1',[A]))[0].reporter==='user05@scg.com','reporter recorded from trial email');
+await p.reload();await W(800);ok((await p.textContent('.who')).includes('Foreman Shift'),'trial login survives reload');
+await as('user02@scg.com');await open(A);ok(await p.locator('[data-act=fd_approve]').count()===0,'trial: wrong-type FD has no approve button');
+const forged=await q({op:'update',t:'requests',payload:{status:'wait_admin',job_type:'normal'},f:[['id',A]],order:[],email:'',headers:{'x-capd-user':'user02@scg.com'}});ok(forged.error&&/ไม่มีสิทธิ์/.test(forged.error.message),'trial: DB still blocks wrong FD');
+await as('user03@scg.com');await open(A);await p.click('input[name=apType][value=RMT]');await p.click('[data-act=fd_approve]');await W(500);ok(await st()==='รอ Admin แจ้งซ่อม','trial: right FD approves');
+ok((await row('select approved_by from requests where id=$1',[A]))[0].approved_by==='user03@scg.com','approved_by from trial email');
+await p.click('#logout');await W(700);ok(await p.locator('#fTrial').count()===1,'logout returns to login');
+const anon=await q({op:'select',t:'requests',f:[],order:[],email:'',headers:{}});ok(anon.data?.length===0,'no header → sees nothing');
+// turn trial off: header ignored
+await db.query(fs.readFileSync(require('../lib/env.js').sql('v3_trial_off.sql'),'utf8'));
+const off=await q({op:'select',t:'requests',f:[],order:[],email:'',headers:{'x-capd-user':'user01@scg.com'}});ok(!off.data?.length,'after trial_off header ignored ('+(off.error?.message||'0 rows')+')');
+const real=await q({op:'select',t:'requests',f:[],order:[],email:'user01@scg.com',headers:{}});ok(real.data?.length>=1,'real login still works after trial_off');
+console.log('errors',errs);await b.close();await db.end();process.exit(0);})();

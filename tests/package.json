@@ -1,0 +1,13 @@
+{
+  "name": "capd-maintenance-tests",
+  "private": true,
+  "description": "End-to-end tests: real SQL files on a throw-away Postgres database + the real web page in Chromium",
+  "scripts": {
+    "test": "node run-all.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.0",
+    "qrcode-generator": "1.4.4",
+    "xlsx": "0.18.5"
+  }
+}

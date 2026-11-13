@@ -3,3 +3,5 @@
 node_modules/
 *.zip
 *.local.sql
+tests/node_modules/
+tests/out/
