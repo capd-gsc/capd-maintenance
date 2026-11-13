@@ -3,7 +3,8 @@
 //   POST {"job":"queue"}  ทุก 1 นาที: ส่งเรื่องในคิว notify_queue (ใบงานเปลี่ยนขั้น)
 //   POST {"job":"daily"}  ทุกวัน 08:00: เปิดใบงาน PM/CAL ที่ใกล้ครบ + เตือน PM/CAL + สรุปงานค้างเกิน 3 วันลง Teams
 // Secrets (Edge Functions → Secrets): CRON_SECRET, APP_URL และอย่างน้อย 1 ช่องทาง
-//   อีเมล: BREVO_API_KEY + MAIL_FROM · Teams: TEAMS_WEBHOOK_URL (งานซ่อม) และ TEAMS_WEBHOOK_URL_PMCAL (PM/CAL, ไม่บังคับ)
+//   Teams channel: TEAMS_WEBHOOK_URL (งานซ่อม) และ TEAMS_WEBHOOK_URL_PMCAL (PM/CAL, ไม่บังคับ)
+//   ถึงตัวบุคคล: TEAMS_PERSONAL_WEBHOOK_URL (แชท Teams + อีเมล Outlook ผ่าน Workflow) หรือ BREVO_API_KEY + MAIL_FROM
 // SUPABASE_URL และ SUPABASE_SERVICE_ROLE_KEY มีให้อัตโนมัติ
 import { createClient } from "npm:@supabase/supabase-js@2.89.0";
 // CAPD Maintenance — notification messages and delivery (no Deno APIs here, so tests can run it in Node).
@@ -17,7 +18,8 @@ export type Job = {
 export type QueueItem = { id: number; request_id: string; event: string; status: string; recipients: string[]; actor: string };
 export type User = { email: string; full_name?: string | null; active?: boolean; notify_email?: boolean };
 // teamsUrl = channel งานซ่อม · teamsUrlPmcal = channel PM/CAL (ไม่ตั้ง = ใช้ channel งานซ่อม)
-export type Config = { appUrl: string; brevoKey?: string; mailFrom?: string; teamsUrl?: string; teamsUrlPmcal?: string };
+// personalUrl = Workflow ที่ส่งแชท Teams ส่วนตัว + อีเมล Outlook ถึงแต่ละคน (ตั้งแล้วจะไม่ใช้ Brevo)
+export type Config = { appUrl: string; brevoKey?: string; mailFrom?: string; teamsUrl?: string; teamsUrlPmcal?: string; personalUrl?: string };
 export const teamsUrlFor = (cfg: Config, jobType?: string | null) => jobType === "pmcal" ? (cfg.teamsUrlPmcal || cfg.teamsUrl) : (cfg.teamsUrl || undefined);
 export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
 
@@ -96,7 +98,11 @@ export async function postTeams(fetchFn: Fetch, url: string, payload: unknown) {
 // ส่ง 1 เรื่องในคิว: อีเมลถึงผู้รับแต่ละคน (ที่เปิดรับอีเมล) + การ์ด Teams 1 ใบ · คืนค่าข้อผิดพลาด (ว่าง = สำเร็จ)
 export async function deliver(fetchFn: Fetch, cfg: Config, it: QueueItem, j: Job, users: User[]): Promise<string[]> {
   const errs: string[] = [];
-  if (cfg.brevoKey && cfg.mailFrom) {
+  if (cfg.personalUrl) {
+    const mail = buildEmail(it, j, users, cfg);
+    const p = personalPayload(j.id, it.recipients, users, mail.subject, mail.html, buildTeamsCard(it, j, users, cfg));
+    if (p) try { await postJson(fetchFn, cfg.personalUrl, p, "personal"); } catch (e) { errs.push((e as Error).message); }
+  } else if (cfg.brevoKey && cfg.mailFrom) {
     const mail = buildEmail(it, j, users, cfg);
     for (const to of it.recipients) {
       const u = users.find((x) => x.email === to);
@@ -116,6 +122,31 @@ export type Reminder = { id: string; machine_no: string; machine_name?: string; 
 export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null };
 const TIER: Record<number, string> = { 1: "ขั้น 1 (≤ 3 เดือน)", 2: "ขั้น 2 (≤ 2 เดือน)", 3: "ขั้น 3 (≤ 1 เดือน)" };
 const left = (d: number) => d < 0 ? `เกิน ${-d} วัน` : `อีก ${d} วัน`;
+
+// ---------- แชทส่วนตัว + อีเมล ผ่าน Workflow ของ Teams (ส่งในนามคนที่สร้าง Workflow) ----------
+// Workflow วนส่ง: การ์ดเข้าแชทของทุกคนใน chat_to และอีเมล Outlook ถึงทุกคนใน email_to
+export function personalPayload(id: string, recipients: string[], users: User[], subject: string, html: string, teamsMessage: { attachments: { content: unknown }[] }) {
+  const ok = recipients.filter((e) => { const u = users.find((x) => x.email === e); return u && u.active !== false; });
+  if (!ok.length) return null;
+  const email_to = ok.filter((e) => users.find((x) => x.email === e)?.notify_email !== false);
+  return { type: "capd-notify", id, subject, html, chat_to: ok, email_to, card: teamsMessage.attachments[0].content };
+}
+export async function postJson(fetchFn: Fetch, url: string, payload: unknown, label: string) {
+  const r = await fetchFn(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+  if (!r.ok) throw new Error(`${label}: ${r.status} ${(await r.text()).slice(0, 200)}`);
+}
+// สรุป PM/CAL รายคนตอนเช้า ส่งผ่าน Workflow ส่วนตัว
+export function dailyPersonalPayloads(rem: Reminder[], users: User[], cfg: Config) {
+  return dailyEmails(rem, cfg).map((m) => {
+    const list = rem.filter((r) => (r.recipients ?? []).includes(m.to));
+    const msg = card([
+      { type: "TextBlock", text: m.subject.replace("[CAPD] ", ""), weight: "Bolder", size: "Medium", wrap: true },
+      { type: "FactSet", facts: list.slice(0, 15).map((r) => ({ title: `${r.machine_no} ${r.pmcal_kind}`, value: `${left(r.days_left)} · ${TIER[r.tier]}` })) },
+      { type: "TextBlock", text: "กด “เริ่มดำเนินการแล้ว” ในใบงานเพื่อหยุดการเตือน", isSubtle: true, wrap: true },
+    ], [{ type: "Action.OpenUrl", title: "เปิดระบบ", url: cfg.appUrl }]) as { attachments: { content: unknown }[] };
+    return personalPayload("daily", [m.to], users, m.subject, m.html, msg);
+  }).filter(Boolean);
+}
 
 export function dailyEmails(rem: Reminder[], cfg: Config) {
   const byPerson = new Map<string, Reminder[]>();
@@ -153,8 +184,8 @@ export function dailyTeamsCard(rem: Reminder[], stale: Stale[], users: User[], c
 
 Deno.serve(async (req) => {
   if (req.headers.get("x-cron-secret") !== Deno.env.get("CRON_SECRET")) return new Response("forbidden", { status: 403 });
-  const cfg: Config = { appUrl: Deno.env.get("APP_URL") ?? "", brevoKey: Deno.env.get("BREVO_API_KEY"), mailFrom: Deno.env.get("MAIL_FROM"), teamsUrl: Deno.env.get("TEAMS_WEBHOOK_URL"), teamsUrlPmcal: Deno.env.get("TEAMS_WEBHOOK_URL_PMCAL") };
-  if (!(cfg.brevoKey && cfg.mailFrom) && !cfg.teamsUrl && !cfg.teamsUrlPmcal) return Response.json({ error: "ยังไม่ได้ตั้ง BREVO_API_KEY + MAIL_FROM หรือ TEAMS_WEBHOOK_URL" }, { status: 500 });
+  const cfg: Config = { appUrl: Deno.env.get("APP_URL") ?? "", brevoKey: Deno.env.get("BREVO_API_KEY"), mailFrom: Deno.env.get("MAIL_FROM"), teamsUrl: Deno.env.get("TEAMS_WEBHOOK_URL"), teamsUrlPmcal: Deno.env.get("TEAMS_WEBHOOK_URL_PMCAL"), personalUrl: Deno.env.get("TEAMS_PERSONAL_WEBHOOK_URL") };
+  if (!(cfg.brevoKey && cfg.mailFrom) && !cfg.teamsUrl && !cfg.teamsUrlPmcal && !cfg.personalUrl) return Response.json({ error: "ยังไม่ได้ตั้ง BREVO_API_KEY + MAIL_FROM หรือ TEAMS_WEBHOOK_URL" }, { status: 500 });
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const job = (await req.json().catch(() => ({}))).job ?? "queue";
   const { data: users } = await sb.from("app_users").select("email, full_name, active, notify_email");
@@ -163,7 +194,10 @@ Deno.serve(async (req) => {
     await sb.rpc("ensure_pmcal_jobs");
     const [{ data: rem }, { data: stale }] = await Promise.all([sb.from("pmcal_reminders").select("*").order("days_left"), sb.from("stale_jobs").select("*").order("idle_days", { ascending: false })]);
     const errs: string[] = [];
-    if (cfg.brevoKey && cfg.mailFrom) for (const m of dailyEmails(rem ?? [], cfg)) {
+    if (cfg.personalUrl) for (const p of dailyPersonalPayloads(rem ?? [], users ?? [], cfg)) {
+      try { await postJson(fetch, cfg.personalUrl, p, "personal"); } catch (e) { errs.push((e as Error).message); }
+    }
+    else if (cfg.brevoKey && cfg.mailFrom) for (const m of dailyEmails(rem ?? [], cfg)) {
       const u = (users ?? []).find((x) => x.email === m.to); if (!u || u.active === false || u.notify_email === false) continue;
       try { await sendEmail(fetch, cfg, m.to, m.subject, m.html); } catch (e) { errs.push((e as Error).message); }
     }

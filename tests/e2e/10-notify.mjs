@@ -106,6 +106,19 @@ const pmPost = posts.find(x => x.url === cfg2.teamsUrlPmcal), repPost = posts.fi
 ok(posts.length === 2 && JSON.stringify(pmPost.card).includes('PM / CAL ที่ยังไม่เริ่ม') && JSON.stringify(pmPost.card).includes(pmItem.request_id) && !JSON.stringify(pmPost.card).includes(stuck), 'daily: PM/CAL reminders + stuck PM/CAL jobs → PM/CAL channel');
 ok(JSON.stringify(repPost.card).includes(stuck) && !JSON.stringify(repPost.card).includes('PM / CAL ที่ยังไม่เริ่ม'), 'daily: stuck repair jobs → repair channel');
 ok(core.dailyTeamsPosts(rem, stale2, users, cfg).length === 1, 'one channel configured → one combined daily card');
+// personal Teams chat + Outlook email through one Workflow (no Brevo)
+const cfg3 = { appUrl: cfg.appUrl, teamsUrl: cfg.teamsUrl, personalUrl: 'https://flow.example.test/personal' };
+calls.length = 0; await core.deliver(fakeFetch, cfg3, qa[0], { ...jA, status: 'pending_fd' }, users);
+const pc = calls.find(c => c.url === cfg3.personalUrl);
+ok(pc && pc.body.chat_to.join() === U(2) && pc.body.email_to.join() === U(2) && pc.body.subject.includes(A) && pc.body.html.includes('?job=' + A) && pc.body.card.type === 'AdaptiveCard', 'personal Workflow gets recipients, subject, html and the card');
+ok(calls.some(c => c.url === cfg3.teamsUrl) && !calls.some(c => c.url.includes('brevo')), 'channel card still posted; Brevo not used when personal Workflow is set');
+calls.length = 0; await core.deliver(fakeFetch, { ...cfg3, brevoKey: 'k', mailFrom: 'x@y' }, qa[3], jA, users2);
+const pc2 = calls.find(c => c.url === cfg3.personalUrl);
+ok(pc2 && pc2.body.chat_to.join() === U(10) && pc2.body.email_to.length === 0 && !calls.some(c => c.url.includes('brevo')), 'email turned off → Teams chat only, no email');
+calls.length = 0; await core.deliver(fakeFetch, cfg3, { ...qa[0], recipients: [] }, jA, users);
+ok(!calls.some(c => c.url === cfg3.personalUrl), 'nobody to tell → personal Workflow not called');
+const dp = core.dailyPersonalPayloads(rem, users, cfg3);
+ok(dp.length > 0 && dp.every(x => x.chat_to.length === 1 && x.subject.includes('PM/CAL') && x.card.type === 'AdaptiveCard'), 'daily PM/CAL reminders go one per person to the personal Workflow');
 
 // ---------- D. link from email opens the job after login ----------
 const { chromium } = require('playwright');

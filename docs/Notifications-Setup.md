@@ -52,7 +52,48 @@
 - การ์ดจะขึ้นในนามคนที่สร้าง Workflow ถ้าคนนั้นย้ายงานหรือถูกลบบัญชี Workflow จะหยุดทำงาน ควรให้บัญชีกลางของแผนกสร้าง
 - ถ้าไม่เห็นเมนู Workflows แปลว่าบริษัทอาจปิดไว้ ให้ถาม IT
 
-## ขั้นที่ 3: อีเมล (Brevo ฟรี 300 ฉบับ/วัน)
+## ขั้นที่ 3: แจ้งถึงตัวบุคคล (เลือก 1 ทาง)
+
+### ทาง ก (แนะนำ): แชท Teams ส่วนตัว + อีเมล Outlook ผ่าน Workflow ไม่ต้องใช้ Brevo
+Workflow 1 อันทำ 2 อย่างกับคนที่ต้องทำต่อทุกคน
+- ส่งการ์ดเข้าแชทส่วนตัวใน Teams
+- ส่งอีเมลจาก**กล่องอีเมลบริษัทของคนที่สร้าง Workflow** เป็นระบบอีเมลของบริษัทจริง จึงเข้ากล่องจดหมายปกติ
+
+ข้อควรรู้ก่อนสร้าง
+- **คนที่สร้าง Workflow คือผู้ส่ง:** อีเมลทั้งหมดส่งในนามคนนั้น และเก็บอยู่ใน Sent Items ของเขา ถ้าในอนาคตบริษัทมีกล่องอีเมลกลางของแผนก ให้ใช้กล่องนั้นสร้าง Workflow
+- **ถ้าคนนั้นย้ายงานหรือถูกลบบัญชี:** Workflow จะหยุดทำงาน
+- **ถ้าบริษัทปิดการเชื่อม Outlook ใน Workflows:** ตอนบันทึกจะขึ้นข้อความเรื่อง policy ให้ถาม IT
+
+**สร้าง Workflow**
+1. Teams → แถบซ้าย **⋯ (More apps)** → **Workflows** → **+ New flow** หรือ **Create** → **Build from scratch** (บางเวอร์ชันชื่อ **Create from blank**)
+2. **ตัวเริ่มต้น:** ค้นหา `webhook` → เลือก **When a Teams webhook request is received** → ช่อง **Who can trigger the flow?** เลือก **Anyone**
+3. **ส่งแชท:** กด **+ New step** → ค้นหา `apply to each` → เลือก **Apply to each** (หรือ **For each**)
+   - ช่อง **Select an output from previous steps:** กดแท็บ **Expression** (fx) แล้วพิมพ์ `triggerBody()?['chat_to']` → **OK**
+   - ภายในกล่องนี้กด **Add an action** → ค้นหา `post card` → เลือก **Post card in a chat or channel**
+     - **Post as:** `Flow bot`
+     - **Post in:** `Chat with Flow bot`
+     - **Recipient:** Expression `item()`
+     - **Adaptive Card:** Expression `string(triggerBody()?['card'])`
+4. **ส่งอีเมล:** กด **+ New step** ด้านล่างนอกกล่องแรก → **Apply to each** อีกกล่อง
+   - ช่อง **Select an output:** Expression `triggerBody()?['email_to']`
+   - ภายในกล่องกด **Add an action** → ค้นหา `send an email` → เลือก **Send an email (V2)** ของ **Office 365 Outlook**
+     - **To:** Expression `item()`
+     - **Subject:** Expression `triggerBody()?['subject']`
+     - **Body:** Expression `triggerBody()?['html']`
+5. ตั้งชื่อ Workflow ว่า `CAPD แจ้งส่วนตัว` → **Save**
+6. เปิดกล่องแรก (When a Teams webhook request is received) อีกครั้ง → คัดลอก **HTTP URL** → ใส่ใน Supabase Secrets ชื่อ `TEAMS_PERSONAL_WEBHOOK_URL` (ห้ามส่งในแชท)
+
+**ระบบส่งข้อมูลอะไรให้ Workflow** (ใช้ตรวจตอนสร้าง)
+```json
+{ "type": "capd-notify", "id": "MR-2026-0012", "subject": "[CAPD] MR-2026-0012 · ใบงานใหม่ รอ Foreman Day อนุมัติ",
+  "html": "<div>…</div>", "chat_to": ["user@scg.com"], "email_to": ["user@scg.com"], "card": { "type": "AdaptiveCard", … } }
+```
+- `email_to` ไม่รวมคนที่ Admin เอาติ๊ก **รับอีเมล** ออก แต่คนนั้นยังได้แชท
+- ถ้าตั้ง `TEAMS_PERSONAL_WEBHOOK_URL` แล้ว ระบบจะไม่ใช้ Brevo
+- การ์ดใน channel ยังส่งตามปกติ
+
+### ทาง ข: อีเมลผ่าน Brevo (ไม่มีแชทส่วนตัว)
+
 1. สมัครที่ brevo.com
 2. ไปที่ **Senders, Domains & Dedicated IPs → Senders** เพิ่มและยืนยันอีเมลผู้ส่ง
 3. ไปที่ **SMTP & API → API Keys** สร้าง API key (เก็บไว้ใส่ในขั้นที่ 4 เท่านั้น)
@@ -74,8 +115,9 @@
    | `APP_URL` | `https://capd-gsc.github.io/capd-maintenance/` |
    | `TEAMS_WEBHOOK_URL` | URL ของ channel งานซ่อม (ขั้นที่ 2) |
    | `TEAMS_WEBHOOK_URL_PMCAL` | URL ของ channel PM/CAL (ขั้นที่ 2) |
-   | `BREVO_API_KEY` | API key จากขั้นที่ 3 |
-   | `MAIL_FROM` | อีเมลผู้ส่งที่ยืนยันแล้วในขั้นที่ 3 |
+   | `TEAMS_PERSONAL_WEBHOOK_URL` | (ทาง ก) URL จาก Workflow แจ้งส่วนตัว |
+   | `BREVO_API_KEY` | (ทาง ข) API key จากขั้นที่ 3 |
+   | `MAIL_FROM` | (ทาง ข) อีเมลผู้ส่งที่ยืนยันแล้วในขั้นที่ 3 |
 
    ต้องมีอย่างน้อยหนึ่งช่องทาง: Teams อย่างเดียว อีเมลอย่างเดียว หรือทั้งคู่
 
@@ -95,5 +137,7 @@ select id, request_id, event, recipients, sent_at, attempts, error from notify_q
 | `sent_at` ว่าง และ `attempts` = 0 | ฟังก์ชันยังไม่ทำงาน ให้ตรวจขั้นที่ 5 และค่า `CRON_SECRET` ให้ตรงกัน |
 | `error` มี `email … 401` | `BREVO_API_KEY` ผิด |
 | `error` มี `email … 400` | `MAIL_FROM` ยังไม่ได้ยืนยันใน Brevo |
-| `error` มี `teams: 4xx` | URL ของ Workflow ผิดหรือถูกลบ |
+| `error` มี `teams: 4xx` | URL ของ Workflow channel ผิดหรือถูกลบ |
+| `error` มี `personal: 4xx` | URL ของ Workflow แจ้งส่วนตัวผิด หรือ Workflow ถูกปิด |
+| Workflow ทำงานแต่ไม่มีอีเมล/แชท | เปิด Workflow ใน Teams → **Run history** ดูขั้นที่ขึ้นสีแดง |
 | ส่งไม่สำเร็จ 5 ครั้ง | ระบบหยุดส่งเรื่องนั้นและเก็บข้อผิดพลาดไว้ |
