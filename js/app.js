@@ -36,6 +36,14 @@ const MSPECIAL = ['เป็นงานเฉพาะต้องการค�
 
 const LOGO = '<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M9 21l5-5 3 3 6-8" fill="none" stroke="#f39a1e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="11" r="2.3" fill="#f39a1e"/></svg>';
 const IC = {
+  qr: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/></svg>',
+  more: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
+  back: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>',
+  plus: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+  warn: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l10 18H2z"/><path d="M12 10v5M12 18v.5"/></svg>',
+  moon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>',
+  sun: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  refresh: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>',
   home: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3l9 8h-3v9h-5v-6h-2v6H6v-9H3z"/></svg>',
   new: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h16M14 4l6 6-9 9H5v-6z"/></svg>',
   list: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="4" cy="6" r="2"/><circle cx="4" cy="12" r="2"/><circle cx="4" cy="18" r="2"/><rect x="8" y="5" width="13" height="2.4"/><rect x="8" y="11" width="13" height="2.4"/><rect x="8" y="17" width="13" height="2.4"/></svg>',
@@ -58,6 +66,15 @@ const D = { machines: [], requests: [], profiles: [], docs: [] };
 
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
+// ธีม: อัตโนมัติตามเครื่อง / สว่าง / มืด (จำไว้ในเบราว์เซอร์นี้)
+const THEME_KEY = 'capd-theme';
+function applyTheme() { let t = 'auto'; try { t = localStorage.getItem(THEME_KEY) || 'auto'; } catch (e) {} if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; return t; }
+function cycleTheme() { const order = ['auto', 'light', 'dark'], cur = applyTheme(), next = order[(order.indexOf(cur) + 1) % 3]; try { localStorage.setItem(THEME_KEY, next); } catch (e) {} applyTheme(); toast({ auto: 'ธีม: ตามเครื่อง', light: 'ธีม: สว่าง', dark: 'ธีม: มืด' }[next]); render(); }
+const isDark = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
+applyTheme();
+const initials = e => { if (!e) return '?'; if (e === 'system') return 'ระบบ'; const n = String(nm(e)).replace(/[^\p{L}\s]/gu, '').trim().split(/\s+/).filter(Boolean); const first = w => Array.from(w).find(c => !/[เแโใไ]/.test(c)) || w[0]; return (n.length > 1 ? first(n[0]) + first(n[n.length - 1]) : Array.from(n[0] || '?').slice(0, 2).join('')).toUpperCase(); };
+const avTone = e => ['a1', 'a2', 'a3', 'a4', 'a5'][[...String(e)].reduce((a, c) => a + c.charCodeAt(0), 0) % 5];
+const avatar = (e, cls = '') => `<span class="av ${cls} ${e === 'system' ? 'a0' : avTone(e)}" aria-hidden="true">${esc(initials(e))}</span>`;
 const $$ = s => document.querySelectorAll(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const TH = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
@@ -270,54 +287,141 @@ async function enter(session) {
 }
 
 /* =================== SHELL =================== */
-function render() {
-  if (!S.me) return renderLogin();
+const NAV_ICON = { home: 'home', new: 'new', list: 'list', approve: 'approve', machine: 'machine', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
+function navItems() {
   const nApprove = D.requests.filter(q => (q.status === 'pending_fd' && isMine(q)) || (q.status === 'memo_approval' && q.memo_approvers[q.memo_step] === S.me.email)).length;
   const nav = [['home', 'หน้าหลัก', myTasks().length], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ', nApprove], ['machine', 'เครื่องจักร'], ['cal', 'PM / CAL', myReminders().length], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
-  const crumbs = { home: 'My Tasks', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'Machine Master', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+  return nav;
+}
+const CRUMBS = { home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (S.view === 'scan' && k === 'machine');
+function render() {
+  if (!S.me) return renderLogin();
+  const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list'].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
+  const sub = S.view === 'detail' ? S.sel : S.view === 'scan' ? S.scanNo : esc(roleText(S.me));
+  const back = ['detail', 'scan'].includes(S.view);
   $('#app').innerHTML = `
-  <header class="top"><div class="top-in">
-    <nav class="topnav">${[['home', 'หน้าหลัก'], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ'], ['cal', 'PM / CAL'], ['report', 'รายงาน']].map(([k, l]) => `<button data-nav="${k}" class="${S.view === k ? 'on' : ''}">${l}</button>`).join('')}</nav>
-    <div class="sp"></div>
-    ${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}
-    <div class="who">${IC.user}<span class="nm">${esc(S.me.full_name || S.me.email)} · ${esc(roleText(S.me))}</span></div>
-    <button class="iconbtn k2-orange" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
-    <button class="iconbtn k2-cyan" id="refresh" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">${IC.clock}</button>
-  </div></header>
-  <div class="wrap">
-    <div class="logoband"><div class="k2logo">${LOGO}<span>CAPD <b>MAINTENANCE</b></span></div><div class="orgtag"><i></i>${esc(C.ORG)}</div></div>
-    <div class="crumb">${IC.home}<a data-nav="home">${esc(C.APP_NAME)}</a><span class="sep">|</span><span class="cur">${crumbs[S.view]}</span></div>
-    <div class="shell">
-      <nav class="rail">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${(S.view === k || (S.view === 'detail' && k === 'list')) ? 'on' : ''}" title="${l}" aria-label="${l}">${IC[k]}${b ? `<span class="badge">${b}</span>` : ''}<span class="lbl">${l}</span></button>`).join('')}</nav>
+  <div class="shell">
+    <aside class="side" aria-label="เมนูหลัก">
+      <div class="brand">${LOGO}<span>CAPD <b>Maintenance</b><small>${esc(C.ORG)}</small></span></div>
+      <nav class="side-nav">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</nav>
+      <div class="side-foot">${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}<span class="sub">${esc(C.APP_NAME)} · ${esc(C.ORG)}</span></div>
+    </aside>
+    <div class="content">
+      <header class="topb">
+        <div class="tb-title">${back ? `<button class="iconbtn ghosty" data-nav="${S.view === 'detail' ? 'list' : 'machine'}" aria-label="กลับ">${IC.back}</button>` : `<span class="mob-only">${avatar(S.me.email)}</span>`}<div><b>${CRUMBS[S.view]}</b><small>${sub}</small></div></div>
+        <div class="sp"></div>
+        ${TRIAL_USER ? '<span class="demo-flag mob-only">ทดลอง</span>' : ''}
+        <button class="btn desk-only" data-scanqr>${IC.qr}<span>สแกน QR</span></button>
+        <button class="iconbtn ghosty" id="themeBtn" title="สลับธีม" aria-label="สลับธีมสว่าง/มืด">${isDark() ? IC.sun : IC.moon}</button>
+        <button class="iconbtn ghosty" id="refresh" title="รีเฟรชข้อมูล" aria-label="รีเฟรชข้อมูล">${IC.refresh}</button>
+        <div class="who desk-only">${avatar(S.me.email)}<span class="nm"><b>${esc(S.me.full_name || S.me.email)}</b><small>${esc(roleText(S.me))}</small></span></div>
+        <button class="iconbtn ghosty desk-only" id="logout" title="ออกจากระบบ" aria-label="ออกจากระบบ">${IC.out}</button>
+      </header>
       <main class="main" id="main">${VIEWS[S.view]()}</main>
     </div>
-  </div>`;
+  </div>
+  <nav class="bnav" aria-label="เมนูหลัก">
+    <button data-nav="home" class="${navOn('home') ? 'on' : ''}">${IC.home}<span>หน้าหลัก</span>${myTasks().length ? `<i class="badge">${myTasks().length}</i>` : ''}</button>
+    <button data-nav="new" class="${navOn('new') ? 'on' : ''}">${IC.new}<span>แจ้งซ่อม</span></button>
+    <button data-scanqr class="fabw" aria-label="สแกน QR ที่เครื่อง"><span class="fab">${IC.qr}</span><span>สแกน</span></button>
+    <button data-nav="list" class="${navOn('list') ? 'on' : ''}">${IC.list}<span>ใบงาน</span></button>
+    <button id="moreBtn" class="${more.some(([k]) => navOn(k)) ? 'on' : ''}">${IC.more}<span>เมนู</span>${moreBadge ? `<i class="badge">${moreBadge}</i>` : ''}</button>
+  </nav>`;
   bind();
 }
+function moreSheet() {
+  const nav = navItems().filter(([k]) => !['home', 'new', 'list'].includes(k));
+  modal(`<div class="sheet-head">${avatar(S.me.email)}<div><b>${esc(S.me.full_name || S.me.email)}</b><div class="sub">${esc(roleText(S.me))}</div></div></div>
+    <div class="sheet-grid">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>
+    <div class="btns" style="margin-top:14px"><button class="btn ghost" id="logout2">${IC.out} ออกจากระบบ</button><button class="btn ghost" data-close>ปิด</button></div>`, 'sheet');
+  $$('#modal [data-nav]').forEach(b => b.onclick = () => { closeModal(); S.view = b.dataset.nav; render(); window.scrollTo(0, 0); });
+  $('#logout2').onclick = async () => { closeModal(); await logout(); S.view = 'home'; renderLogin(); };
+}
 
-function taskTable(rows, empty = 'ไม่มีรายการ') {
+/* ---------- สแกน QR ในเว็บ (กล้องมือถือ) ---------- */
+let scanStream = null;
+function stopScan() { if (scanStream) { scanStream.getTracks().forEach(t => t.stop()); scanStream = null; } }
+function loadJsQR() { return window.jsQR ? Promise.resolve() : new Promise((ok, no) => { const sc = document.createElement('script'); sc.src = 'https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js'; sc.onload = ok; sc.onerror = no; document.head.appendChild(sc); }); }
+function handleCode(text) {
+  let no = null;
+  try { no = new URL(text, location.href).searchParams.get('m'); } catch (e) {}
+  if (!no && D.machines.some(m => m.machine_no === String(text).trim())) no = String(text).trim();
+  if (!no) return toast('QR นี้ไม่ใช่ของระบบ CAPD');
+  if (!D.machines.some(m => m.machine_no === no)) return toast('ไม่พบเครื่อง ' + no + ' ในระบบ');
+  stopScan(); closeModal(); openScan(no);
+}
+async function openScanner() {
+  modal(`<div class="h-row" style="margin-bottom:12px"><h1 style="font-size:20px">สแกน QR ที่เครื่อง</h1><button class="btn ghost" data-close>ปิด</button></div>
+    <div class="scanbox"><video id="scanVideo" playsinline muted></video><div class="scanframe" aria-hidden="true"></div></div>
+    <p class="sub" id="scanMsg">เล็งกล้องไปที่สติกเกอร์ QR บนเครื่องจักร</p>
+    <div class="form" style="margin-top:6px"><div class="field"><label for="scanNo">หรือเลือกเครื่องเอง</label><select id="scanNo" class="inp"><option value="">— เลือกเครื่อง —</option>${D.machines.filter(m => m.status !== 'Inactive').map(m => `<option value="${esc(m.machine_no)}">${esc(m.machine_no)} · ${esc(m.machine_name)}</option>`).join('')}</select></div>
+    <div class="field"><label for="scanImg">หรือถ่ายรูป QR</label><input id="scanImg" class="inp" type="file" accept="image/*" capture="environment"></div></div>`, 'scanner');
+  const bg = $('#modal'); const obs = new MutationObserver(() => { if (!document.body.contains(bg)) { stopScan(); obs.disconnect(); } }); obs.observe(document.body, { childList: true });
+  $('#scanNo').onchange = e => { if (e.target.value) { closeModal(); openScan(e.target.value); } };
+  const detector = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+  const decode = async src => {
+    if (detector) { try { const r = await detector.detect(src); if (r[0]) return r[0].rawValue; } catch (e) {} }
+    await loadJsQR(); const c = document.createElement('canvas'), w = src.videoWidth || src.naturalWidth || src.width, h = src.videoHeight || src.naturalHeight || src.height; if (!w) return null;
+    c.width = w; c.height = h; const x = c.getContext('2d', { willReadFrequently: true }); x.drawImage(src, 0, 0, w, h); return window.jsQR(x.getImageData(0, 0, w, h).data, w, h)?.data || null;
+  };
+  $('#scanImg').onchange = async e => { const f = e.target.files[0]; if (!f) return; const img = new Image(); img.onload = async () => { const t = await decode(img).catch(() => null); t ? handleCode(t) : toast('อ่าน QR จากรูปไม่ได้ ลองถ่ายให้ชัดขึ้น'); }; img.src = URL.createObjectURL(f); };
+  try {
+    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    const v = $('#scanVideo'); if (!v) return stopScan(); v.srcObject = scanStream; await v.play();
+    if (!detector) loadJsQR().catch(() => {});
+    const tick = async () => { if (!scanStream || !document.body.contains(v)) return; const t = v.readyState >= 2 ? await decode(v).catch(() => null) : null; if (t) return handleCode(t); setTimeout(tick, 250); };
+    tick();
+  } catch (e) { const m = $('#scanMsg'); if (m) m.textContent = 'เปิดกล้องไม่ได้ (ไม่ได้อนุญาต หรืออุปกรณ์ไม่มีกล้อง) · เลือกเครื่องหรือถ่ายรูป QR ด้านล่างแทน'; $('.scanbox')?.remove(); }
+}
+
+function jobCard(q) {
+  const m = M(q.machine_no);
+  return `<button class="jobc" data-open="${esc(q.id)}"><span class="jc-top"><b class="mono">${esc(q.id)}</b>${pill(q.status)}<span class="sp"></span><span class="u-${esc(q.urgency)}">● ${esc(q.urgency)}</span></span>
+    <span class="jc-m"><b>${esc(q.machine_no)}</b> <span class="sub">${esc(m.machine_name || '')}</span></span>
+    <span class="jc-s">${esc(q.symptom)}</span>
+    <span class="jc-meta"><span>${esc(jobType(q))}</span><span>${fd(q.created_at)}</span>${OPEN(q.status) ? `<span>ถัดไป: <b>${esc(ownerText(q))}</b></span>` : ''}</span></button>`;
+}
+function taskTable(rows, empty = 'ไม่มีรายการ', cardsOnly = false) {
   if (!rows.length) return `<div class="empty">${empty}</div>`;
-  return `<div class="tbl-wrap"><table><thead><tr><th>#</th><th>Folio</th><th>ประเภท</th><th>สถานะ</th><th>ผู้ดำเนินการถัดไป</th><th>วันที่เปิด</th></tr></thead><tbody>
-  ${rows.map((q, i) => { const m = M(q.machine_no); return `<tr class="click" data-open="${esc(q.id)}"><td class="num">${i + 1}</td><td><span class="folio">${esc(q.id)}, ${esc(q.machine_no)} ${esc(m.machine_name)}</span><br><span class="sub">${esc(q.symptom)}</span></td><td>${esc(jobType(q))}<br><span class="u-${esc(q.urgency)}">${esc(q.urgency)}</span></td><td>${pill(q.status)}</td><td>${OPEN(q.status) ? esc(ownerText(q)) : '-'}</td><td class="num">${fd(q.created_at)}</td></tr>`; }).join('')}
+  const cards = `<div class="jobs ${cardsOnly ? '' : 'mob-only'}">${rows.map(jobCard).join('')}</div>`;
+  if (cardsOnly) return cards;
+  return cards + `<div class="tbl-wrap desk-only"><table><thead><tr><th>#</th><th>ใบงาน</th><th>ประเภท</th><th>สถานะ</th><th>ผู้ดำเนินการถัดไป</th><th>วันที่เปิด</th></tr></thead><tbody>
+  ${rows.map((q, i) => { const m = M(q.machine_no); return `<tr class="click" data-open="${esc(q.id)}"><td class="num sub">${i + 1}</td><td><span class="folio">${esc(q.id)}</span> · <b>${esc(q.machine_no)}</b> <span class="sub">${esc(m.machine_name)}</span><br><span class="sub">${esc(q.symptom)}</span></td><td>${esc(jobType(q))}<br><span class="u-${esc(q.urgency)}">${esc(q.urgency)}</span></td><td>${pill(q.status)}</td><td>${OPEN(q.status) ? esc(ownerText(q)) : '-'}</td><td class="num">${fd(q.created_at)}</td></tr>`; }).join('')}
   </tbody></table></div>`;
+}
+// งานเข้า / ปิด รายสัปดาห์ (8 สัปดาห์ล่าสุด)
+function weekChart() {
+  const wk = d => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return x.getTime(); };
+  const now = wk(Date.now()), weeks = Array.from({ length: 8 }, (_, i) => now - (7 - i) * 7 * 864e5);
+  const rows = weeks.map(w => ({ w, inn: D.requests.filter(q => wk(q.created_at) === w).length, out: D.requests.filter(q => q.status === 'closed' && q.end_at && wk(q.end_at) === w).length }));
+  const mx = Math.max(1, ...rows.flatMap(r => [r.inn, r.out])), W = 340, base = 104, hgt = 82, gap = 40, bw = 13;
+  const bars = rows.map((r, i) => { const x = 18 + i * gap, d = new Date(r.w); return `<rect x="${x}" y="${base - r.inn / mx * hgt}" width="${bw}" height="${r.inn / mx * hgt}" rx="2" class="c-in"><title>${r.inn} งานเข้า</title></rect><rect x="${x + bw + 2}" y="${base - r.out / mx * hgt}" width="${bw}" height="${r.out / mx * hgt}" rx="2" class="c-out"><title>${r.out} งานปิด</title></rect><text x="${x + bw}" y="${base + 16}" text-anchor="middle" class="c-lbl">${d.getDate()} ${TH[d.getMonth()]}</text>`; }).join('');
+  const last = rows.at(-1);
+  return `<svg class="wchart" viewBox="0 0 ${W} 126" role="img" aria-label="งานเข้าและงานปิดรายสัปดาห์"><line x1="10" x2="${W - 6}" y1="${base}" y2="${base}" class="c-axis"/>${bars}</svg>
+    <div class="legend"><span><i class="c-in"></i>งานเข้า</span><span><i class="c-out"></i>งานปิด</span><span class="sub">สัปดาห์นี้ เข้า ${last.inn} · ปิด ${last.out}</span></div>`;
 }
 
 /* =================== VIEWS =================== */
 const VIEWS = {
   home() {
     const t = myTasks(), open = D.requests.filter(q => OPEN(q.status)), rem = myReminders();
-    const memoWait = D.requests.filter(q => q.status === 'memo_approval').length;
-    return `<div class="h-row"><h1>My Tasks</h1><span class="sub">${esc(roleText(S.me))}</span></div>
+    const crit = open.filter(q => q.urgency === 'Critical').length, soon = rem.filter(q => daysLeft(q.due_date) <= 30).length;
+    const tile = (ic, tone, n, label, nav) => `<button class="tile ${tone}" ${nav ? `data-nav="${nav}"` : ''}><span class="ti">${ic}</span><b>${n}</b><span>${label}</span></button>`;
+    return `<div class="hello"><h1>สวัสดี, ${esc(String(S.me.full_name || S.me.email).split(' ')[0])}</h1><span class="sub">${esc(roleText(S.me))}${t.length ? ` · มี ${t.length} งานรอคุณ` : ' · ไม่มีงานค้าง'}</span></div>
     <div class="tiles">
-      <div class="tile"><b>${open.length}</b><span>ใบงานที่ยังเปิด</span></div>
-      <div class="tile ${open.some(q => q.urgency === 'Critical') ? 'alert' : ''}"><b>${open.filter(q => q.urgency === 'Critical').length}</b><span>Critical ที่ยังเปิด</span></div>
-      <div class="tile"><b>${memoWait}</b><span>MEMO รอ Manager อนุมัติ</span></div>
-      <div class="tile ${rem.some(q => tierOf(daysLeft(q.due_date)) === 3) ? 'alert' : ''}"><b>${rem.length}</b><span>PM/CAL รอเริ่มดำเนินการ</span></div>
+      ${tile(IC.approve, 't-info', t.length, 'งานรอฉัน', '')}
+      ${tile(IC.list, 't-ok', open.length, 'ใบงานที่ยังเปิด', 'list')}
+      ${tile(IC.warn, crit ? 't-bad alert' : 't-bad', crit, 'Critical ที่ยังเปิด', 'list')}
+      ${tile(IC.cal, 't-warn', soon, 'PM/CAL ใน 30 วัน', 'cal')}
     </div>
-    ${rem.length ? `<div class="remind"><b>PM / CAL ที่ต้องเริ่มดำเนินการ</b>${rem.map(q => { const d = daysLeft(q.due_date); return `<div class="rrow" data-open="${esc(q.id)}"><span class="tier t${tierOf(d)}">ขั้น ${tierOf(d)}</span><span><b>${esc(q.machine_no)}</b> ${esc(q.pmcal_kind)} ครบกำหนด ${fd(q.due_date)} · ${d < 0 ? 'เกิน ' + (-d) : 'อีก ' + d} วัน</span><span class="sub">${esc(nm(q.assignee))}</span></div>`; }).join('')}</div>` : ''}
-    <div class="fbar"><b>งานของฉัน (${t.length})</b><div class="sp"></div>${canCreate() ? '<button class="btn" data-nav="new">+ แจ้งซ่อม</button>' : ''}</div>
-    ${taskTable(t, 'ไม่มีงานค้างสำหรับคุณ')}`;
+    ${rem.length ? `<div class="remind"><b>${IC.cal} PM / CAL ที่ต้องเริ่มดำเนินการ</b>${rem.map(q => { const d = daysLeft(q.due_date); return `<div class="rrow" data-open="${esc(q.id)}"><span class="tier t${tierOf(d)}">ขั้น ${tierOf(d)}</span><span><b>${esc(q.machine_no)}</b> ${esc(q.pmcal_kind)} ครบกำหนด ${fd(q.due_date)} · ${d < 0 ? 'เกิน ' + (-d) : 'อีก ' + d} วัน</span><span class="sub">${esc(nm(q.assignee))}</span></div>`; }).join('')}</div>` : ''}
+    <div class="home-grid">
+      <section class="stack"><div class="sec-h"><h2>งานของฉัน (${t.length})</h2><span class="sp"></span>${canCreate() ? `<button class="btn" data-nav="new">${IC.plus} แจ้งซ่อม</button>` : ''}</div>
+        ${taskTable(t, 'ไม่มีงานค้างสำหรับคุณ', true)}</section>
+      <section class="box"><h3>งานเข้า / ปิด รายสัปดาห์</h3>${weekChart()}</section>
+    </div>`;
   },
 
   list() {
@@ -372,7 +476,8 @@ const VIEWS = {
     return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
     ${stepsHtml(q)}
     <div class="detail">
-      <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+      <div class="stack">
+        ${actions(q)}
         <div class="box"><h3>ข้อมูลใบงาน</h3><dl class="kv">
           ${kv('เครื่องจักร', `<b>${esc(m.machine_no)}</b> · ${esc(m.machine_name)} <span class="sub">${esc(m.location || '')}</span>`)}
           ${kv('ประเภทงาน', esc(jobType(q)))}
@@ -401,9 +506,8 @@ const VIEWS = {
           ${kv('ค่าใช้จ่าย', money(q.cost_thb))}${kv('เริ่ม', fd(q.start_at))}${kv('เสร็จ', fd(q.end_at))}${kv('ระยะเวลา / Downtime', q.downtime_min != null ? q.downtime_min + ' นาที' : '')}
           ${kv('ปิดงานโดย', esc(nm(q.closed_by)))}</dl></div>` : ''}
         ${att ? `<div class="box"><h3>ไฟล์แนบ</h3><div class="atts">${att}</div></div>` : ''}
-        ${actions(q)}
       </div>
-      <div class="box"><h3>ประวัติการดำเนินการ</h3><ul class="timeline">${S.logs.map(l => `<li><div>${esc(l.action)}<small>${esc(nm(l.actor))} · ${fd(l.at)}</small></div></li>`).join('') || '<li><div class="sub">—</div></li>'}</ul></div>
+      <div class="box"><h3>ประวัติการดำเนินการ</h3><ul class="timeline">${S.logs.map(l => `<li>${avatar(l.actor, 's')}<div>${esc(l.action)}<small>${esc(nm(l.actor))} · ${fd(l.at)}</small></div></li>`).join('') || '<li><div class="sub">—</div></li>'}</ul></div>
     </div>`;
   },
 
@@ -562,7 +666,7 @@ function stepsHtml(q) {
   };
   const plan = plans[q.job_type] || plans.none;
   let cur = plan.findIndex(s => s[1].includes(q.status)); if (cur < 0) cur = q.status === 'closed' ? plan.length - 1 : 0;
-  return `<div class="steps">${plan.map((s, i) => `<span class="${i < cur || q.status === 'closed' ? 'done' : i === cur ? 'now' : ''}">${s[0]}</span>`).join('')}</div>`;
+  return `<ol class="steps">${plan.map((s, i) => { const st = i < cur || q.status === 'closed' ? 'done' : i === cur ? 'now' : ''; return `<li class="${st}"><span class="c">${st === 'done' ? '✓' : i + 1}</span><span class="t">${s[0]}</span></li>`; }).join('')}</ol>`;
 }
 function memoChain(q) {
   const allDone = ['po_vendor', 'closed'].includes(q.status);
@@ -1226,7 +1330,7 @@ function deleteForm(q) {
 }
 
 /* ---------- modal ---------- */
-function modal(html) { closeModal(); const bg = document.createElement('div'); bg.className = 'modal-bg'; bg.id = 'modal'; bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`; bg.onclick = e => { if (e.target === bg || e.target.hasAttribute('data-close')) closeModal(); }; document.body.appendChild(bg); }
+function modal(html, cls = '') { closeModal(); const bg = document.createElement('div'); bg.className = 'modal-bg ' + cls; bg.id = 'modal'; bg.innerHTML = `<div class="modal" role="dialog" aria-modal="true">${html}</div>`; bg.onclick = e => { if (e.target === bg || e.target.hasAttribute('data-close')) closeModal(); }; document.body.appendChild(bg); }
 function closeModal() { $('#modal')?.remove(); }
 
 /* ---------- bind ---------- */
@@ -1287,7 +1391,10 @@ function bind() {
   };
   $$('[data-rolesel]').forEach(sel => sel.onchange = () => { const k = sel.dataset.rolesel, f = $(k === 'ps' ? '#psFd' : '#pf' + k); f.disabled = sel.value !== 'foreman_day'; if (f.disabled) f.value = ''; const a = $(k === 'ps' ? '#psAdmin' : '#pa' + k); if (sel.value === 'admin') { a.checked = true; a.disabled = true; } else a.disabled = false; });
   $('#uImport') && ($('#uImport').onchange = e => { const f = e.target.files[0]; if (f) importUsers(f); e.target.value = ''; });
-  $('#logout').onclick = async () => { await logout(); S.view = 'home'; renderLogin(); };
+  $('#logout') && ($('#logout').onclick = async () => { await logout(); S.view = 'home'; renderLogin(); });
+  $('#themeBtn') && ($('#themeBtn').onclick = cycleTheme);
+  $('#moreBtn') && ($('#moreBtn').onclick = moreSheet);
+  $$('[data-scanqr]').forEach(b => b.onclick = openScanner);
   $('#refresh').onclick = () => { reload(); toast('รีเฟรชข้อมูลแล้ว'); };
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq');
