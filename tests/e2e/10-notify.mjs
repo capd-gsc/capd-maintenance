@@ -88,6 +88,24 @@ ok(rem.length > 0 && dm.length > 0 && dm.every(m => m.subject.includes('PM/CAL')
 const dc = core.dailyTeamsCard(rem, stale, users, cfg);
 ok(dc && JSON.stringify(dc).includes('ใบงานค้างเกิน 3 วัน') && JSON.stringify(dc).includes(stuck), 'daily Teams card lists PM/CAL and stuck jobs');
 ok(core.dailyTeamsCard([], [], users, cfg) === null, 'no daily card when nothing is due');
+// two channels: repair vs PM/CAL
+const cfg2 = { ...cfg, teamsUrlPmcal: 'https://teams.example.test/pmcal' };
+const pmItem = (await row("select q.* from notify_queue q join requests r on r.id=q.request_id where r.job_type='pmcal' order by q.id limit 1"))[0];
+const pmJob = await jobOf(pmItem.request_id);
+calls.length = 0; await core.deliver(fakeFetch, cfg2, pmItem, pmJob, users);
+ok(calls.some(c => c.url === cfg2.teamsUrlPmcal) && !calls.some(c => c.url === cfg2.teamsUrl), 'PM/CAL job card → PM/CAL channel');
+calls.length = 0; await core.deliver(fakeFetch, cfg2, qa[1], jA, users);
+ok(calls.some(c => c.url === cfg2.teamsUrl) && !calls.some(c => c.url === cfg2.teamsUrlPmcal), 'repair job card → repair channel');
+calls.length = 0; await core.deliver(fakeFetch, cfg, pmItem, pmJob, users);
+ok(calls.some(c => c.url === cfg.teamsUrl), 'no PM/CAL channel set → PM/CAL card falls back to repair channel');
+await db.query("update requests set updated_at = now() - interval '6 days' where id=$1", [pmItem.request_id]).catch(() => {});
+await db.query('alter table requests disable trigger guard_request'); await db.query("update requests set updated_at = now() - interval '6 days' where id=$1", [pmItem.request_id]); await db.query('alter table requests enable trigger guard_request');
+const stale2 = await row('select * from stale_jobs');
+const posts = core.dailyTeamsPosts(rem, stale2, users, cfg2);
+const pmPost = posts.find(x => x.url === cfg2.teamsUrlPmcal), repPost = posts.find(x => x.url === cfg2.teamsUrl);
+ok(posts.length === 2 && JSON.stringify(pmPost.card).includes('PM / CAL ที่ยังไม่เริ่ม') && JSON.stringify(pmPost.card).includes(pmItem.request_id) && !JSON.stringify(pmPost.card).includes(stuck), 'daily: PM/CAL reminders + stuck PM/CAL jobs → PM/CAL channel');
+ok(JSON.stringify(repPost.card).includes(stuck) && !JSON.stringify(repPost.card).includes('PM / CAL ที่ยังไม่เริ่ม'), 'daily: stuck repair jobs → repair channel');
+ok(core.dailyTeamsPosts(rem, stale2, users, cfg).length === 1, 'one channel configured → one combined daily card');
 
 // ---------- D. link from email opens the job after login ----------
 const { chromium } = require('playwright');

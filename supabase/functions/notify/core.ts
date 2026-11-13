@@ -8,7 +8,9 @@ export type Job = {
 };
 export type QueueItem = { id: number; request_id: string; event: string; status: string; recipients: string[]; actor: string };
 export type User = { email: string; full_name?: string | null; active?: boolean; notify_email?: boolean };
-export type Config = { appUrl: string; brevoKey?: string; mailFrom?: string; teamsUrl?: string };
+// teamsUrl = channel งานซ่อม · teamsUrlPmcal = channel PM/CAL (ไม่ตั้ง = ใช้ channel งานซ่อม)
+export type Config = { appUrl: string; brevoKey?: string; mailFrom?: string; teamsUrl?: string; teamsUrlPmcal?: string };
+export const teamsUrlFor = (cfg: Config, jobType?: string | null) => jobType === "pmcal" ? (cfg.teamsUrlPmcal || cfg.teamsUrl) : (cfg.teamsUrl || undefined);
 export type Fetch = (url: string, init: { method: string; headers: Record<string, string>; body: string }) => Promise<{ ok: boolean; status: number; text: () => Promise<string> }>;
 
 const esc = (s: unknown) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!));
@@ -78,8 +80,8 @@ export async function sendEmail(fetchFn: Fetch, cfg: Config, to: string, subject
   });
   if (!r.ok) throw new Error(`email ${to}: ${r.status} ${(await r.text()).slice(0, 200)}`);
 }
-export async function postTeams(fetchFn: Fetch, cfg: Config, payload: unknown) {
-  const r = await fetchFn(cfg.teamsUrl!, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+export async function postTeams(fetchFn: Fetch, url: string, payload: unknown) {
+  const r = await fetchFn(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
   if (!r.ok) throw new Error(`teams: ${r.status} ${(await r.text()).slice(0, 200)}`);
 }
 
@@ -94,15 +96,16 @@ export async function deliver(fetchFn: Fetch, cfg: Config, it: QueueItem, j: Job
       try { await sendEmail(fetchFn, cfg, to, mail.subject, mail.html); } catch (e) { errs.push((e as Error).message); }
     }
   }
-  if (cfg.teamsUrl && it.event !== "closed") {   // ปิดงานแจ้งแค่อีเมลถึงผู้เปิด ไม่โพสต์ช่องทีม
-    try { await postTeams(fetchFn, cfg, buildTeamsCard(it, j, users, cfg)); } catch (e) { errs.push((e as Error).message); }
+  const url = teamsUrlFor(cfg, j.job_type);
+  if (url && it.event !== "closed") {   // ปิดงานแจ้งแค่อีเมลถึงผู้เปิด ไม่โพสต์ช่องทีม · PM/CAL ไป channel ของ PM/CAL
+    try { await postTeams(fetchFn, url, buildTeamsCard(it, j, users, cfg)); } catch (e) { errs.push((e as Error).message); }
   }
   return errs;
 }
 
 // ---------- สรุปรายวัน ----------
 export type Reminder = { id: string; machine_no: string; machine_name?: string; pmcal_kind: string; due_date: string; days_left: number; tier: number; recipients: string[] };
-export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[] };
+export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null };
 const TIER: Record<number, string> = { 1: "ขั้น 1 (≤ 3 เดือน)", 2: "ขั้น 2 (≤ 2 เดือน)", 3: "ขั้น 3 (≤ 1 เดือน)" };
 const left = (d: number) => d < 0 ? `เกิน ${-d} วัน` : `อีก ${d} วัน`;
 
@@ -118,9 +121,21 @@ export function dailyEmails(rem: Reminder[], cfg: Config) {
   }));
 }
 
-export function dailyTeamsCard(rem: Reminder[], stale: Stale[], users: User[], cfg: Config) {
+// สรุปเช้า แยกตาม channel: PM/CAL (เตือน + ใบงาน PM/CAL ที่ค้าง) และงานซ่อม (ใบงานซ่อมที่ค้าง) · ถ้าใช้ channel เดียว รวมเป็นการ์ดเดียว
+export function dailyTeamsPosts(rem: Reminder[], stale: Stale[], users: User[], cfg: Config): { url: string; card: unknown }[] {
+  const pmUrl = teamsUrlFor(cfg, "pmcal"), repUrl = teamsUrlFor(cfg, null);
+  if (pmUrl && repUrl && pmUrl === repUrl) { const c = dailyTeamsCard(rem, stale, users, cfg); return c ? [{ url: repUrl, card: c }] : []; }
+  const out: { url: string; card: unknown }[] = [];
+  const pm = dailyTeamsCard(rem, stale.filter((s) => s.job_type === "pmcal"), users, cfg, "PM / CAL");
+  const rep = dailyTeamsCard([], stale.filter((s) => s.job_type !== "pmcal"), users, cfg, "งานซ่อม");
+  if (pmUrl && pm) out.push({ url: pmUrl, card: pm });
+  if (repUrl && rep) out.push({ url: repUrl, card: rep });
+  return out;
+}
+
+export function dailyTeamsCard(rem: Reminder[], stale: Stale[], users: User[], cfg: Config, label = "") {
   if (!rem.length && !stale.length) return null;
-  const body: unknown[] = [{ type: "TextBlock", text: "สรุปเช้านี้ · CAPD Maintenance", weight: "Bolder", size: "Medium" }];
+  const body: unknown[] = [{ type: "TextBlock", text: `สรุปเช้านี้${label ? " · " + label : ""} · CAPD Maintenance`, weight: "Bolder", size: "Medium" }];
   if (rem.length) body.push({ type: "TextBlock", text: `PM / CAL ที่ยังไม่เริ่ม (${rem.length})`, weight: "Bolder", spacing: "Medium" },
     { type: "FactSet", facts: rem.slice(0, 15).map((r) => ({ title: `${r.machine_no} ${r.pmcal_kind}`, value: `${left(r.days_left)} · ${TIER[r.tier]} · ${nameOf(users, r.recipients?.[0] ?? "")}` })) });
   if (stale.length) body.push({ type: "TextBlock", text: `ใบงานค้างเกิน 3 วัน (${stale.length})`, weight: "Bolder", spacing: "Medium" },

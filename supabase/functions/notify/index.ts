@@ -2,15 +2,15 @@
 //   POST {"job":"queue"}  ทุก 1 นาที: ส่งเรื่องในคิว notify_queue (ใบงานเปลี่ยนขั้น)
 //   POST {"job":"daily"}  ทุกวัน 08:00: เปิดใบงาน PM/CAL ที่ใกล้ครบ + เตือน PM/CAL + สรุปงานค้างเกิน 3 วันลง Teams
 // Secrets (Edge Functions → Secrets): CRON_SECRET, APP_URL และอย่างน้อย 1 ช่องทาง
-//   อีเมล: BREVO_API_KEY + MAIL_FROM · Teams: TEAMS_WEBHOOK_URL
+//   อีเมล: BREVO_API_KEY + MAIL_FROM · Teams: TEAMS_WEBHOOK_URL (งานซ่อม) และ TEAMS_WEBHOOK_URL_PMCAL (PM/CAL, ไม่บังคับ)
 // SUPABASE_URL และ SUPABASE_SERVICE_ROLE_KEY มีให้อัตโนมัติ
 import { createClient } from "npm:@supabase/supabase-js@2.89.0";
-import { dailyEmails, dailyTeamsCard, deliver, postTeams, sendEmail, type Config } from "./core.ts";
+import { dailyEmails, dailyTeamsPosts, deliver, postTeams, sendEmail, type Config } from "./core.ts";
 
 Deno.serve(async (req) => {
   if (req.headers.get("x-cron-secret") !== Deno.env.get("CRON_SECRET")) return new Response("forbidden", { status: 403 });
-  const cfg: Config = { appUrl: Deno.env.get("APP_URL") ?? "", brevoKey: Deno.env.get("BREVO_API_KEY"), mailFrom: Deno.env.get("MAIL_FROM"), teamsUrl: Deno.env.get("TEAMS_WEBHOOK_URL") };
-  if (!(cfg.brevoKey && cfg.mailFrom) && !cfg.teamsUrl) return Response.json({ error: "ยังไม่ได้ตั้ง BREVO_API_KEY + MAIL_FROM หรือ TEAMS_WEBHOOK_URL" }, { status: 500 });
+  const cfg: Config = { appUrl: Deno.env.get("APP_URL") ?? "", brevoKey: Deno.env.get("BREVO_API_KEY"), mailFrom: Deno.env.get("MAIL_FROM"), teamsUrl: Deno.env.get("TEAMS_WEBHOOK_URL"), teamsUrlPmcal: Deno.env.get("TEAMS_WEBHOOK_URL_PMCAL") };
+  if (!(cfg.brevoKey && cfg.mailFrom) && !cfg.teamsUrl && !cfg.teamsUrlPmcal) return Response.json({ error: "ยังไม่ได้ตั้ง BREVO_API_KEY + MAIL_FROM หรือ TEAMS_WEBHOOK_URL" }, { status: 500 });
   const sb = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
   const job = (await req.json().catch(() => ({}))).job ?? "queue";
   const { data: users } = await sb.from("app_users").select("email, full_name, active, notify_email");
@@ -23,8 +23,9 @@ Deno.serve(async (req) => {
       const u = (users ?? []).find((x) => x.email === m.to); if (!u || u.active === false || u.notify_email === false) continue;
       try { await sendEmail(fetch, cfg, m.to, m.subject, m.html); } catch (e) { errs.push((e as Error).message); }
     }
-    const daily = dailyTeamsCard(rem ?? [], stale ?? [], users ?? [], cfg);
-    if (cfg.teamsUrl && daily) try { await postTeams(fetch, cfg, daily); } catch (e) { errs.push((e as Error).message); }
+    for (const p of dailyTeamsPosts(rem ?? [], stale ?? [], users ?? [], cfg)) {
+      try { await postTeams(fetch, p.url, p.card); } catch (e) { errs.push((e as Error).message); }
+    }
     return Response.json({ reminders: rem?.length ?? 0, stale: stale?.length ?? 0, errors: errs });
   }
 

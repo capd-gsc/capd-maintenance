@@ -438,7 +438,7 @@ grant select on public.pmcal_reminders to authenticated;
 -- =====================================================================
 -- CAPD Maintenance v3.4 — คิวแจ้งเตือน (อีเมล + Teams)
 -- ทุกครั้งที่ใบงานเปลี่ยนขั้น ฐานข้อมูลใส่เรื่องลงคิว พร้อมรายชื่อคนที่ต้องทำต่อ
--- Edge Function "notify" อ่านคิวทุก 1 นาทีแล้วส่งอีเมลและโพสต์ Teams (ดู README หัวข้อการแจ้งเตือน)
+-- Edge Function "notify" อ่านคิวทุก 1 นาทีแล้วส่งอีเมลและโพสต์ Teams (ดู docs/Notifications-Setup.md)
 -- รันครั้งเดียวใน SQL Editor หลัง v3_auth.sql · รันซ้ำได้
 -- =====================================================================
 
@@ -505,7 +505,7 @@ create trigger queue_notify after insert or update on public.requests for each r
 create or replace view public.stale_jobs as
 select q.id, q.machine_no, m.machine_name, q.status, q.urgency, q.updated_at,
        ((now() at time zone 'Asia/Bangkok')::date - (q.updated_at at time zone 'Asia/Bangkok')::date) as idle_days,
-       public.next_actors(q) as waiting_on
+       public.next_actors(q) as waiting_on, q.job_type
 from public.requests q join public.machines m on m.machine_no = q.machine_no
 where q.status not in ('closed', 'cancelled') and q.updated_at < now() - interval '3 days';
 revoke all on public.stale_jobs from anon, authenticated;
