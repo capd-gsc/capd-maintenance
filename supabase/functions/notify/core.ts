@@ -2,7 +2,7 @@
 // index.ts wires it to Supabase; tests/e2e/10-notify.mjs drives it with a fake fetch.
 
 export type Job = {
-  id: string; machine_no: string; machine_name?: string; symptom?: string; urgency?: string; status: string;
+  id: string; machine_no: string | null; machine_name?: string; symptom?: string; urgency?: string; status: string;
   job_type?: string | null; repair_unit?: string | null; pmcal_kind?: string | null; due_date?: string | null;
   return_note?: string | null; memo_no?: string | null; memo_step?: number; vendor?: string | null; quotation_amount?: number | string | null; po_no?: string | null;
 };
@@ -20,7 +20,20 @@ export const jobUrl = (cfg: Config, id: string) => cfg.appUrl.replace(/\/?$/, "/
 export const nameOf = (users: User[], e: string) => e === "" || e === "system" ? "ระบบ" : (users.find((u) => u.email === e)?.full_name || e.split("@")[0]);
 
 // หัวเรื่อง (สิ่งที่ผู้รับต้องทำ) ตามเหตุการณ์และสถานะ
+const machineText = (no?: string | null, name?: string | null) => no ? `${no} ${name ?? ""}`.trim() : "ไม่ระบุ (ใช้ทั่วไป)";
+
 export function headline(it: QueueItem, j: Job): string {
+  const pr = j.job_type === "purchase";
+  if (pr) {
+    if (it.event === "closed") return "คำขอซื้อของคุณรับของครบและปิดแล้ว";
+    if (it.event === "cancelled") return "คำขอซื้อของคุณถูกยกเลิก";
+    if (it.event !== "memo_next") switch (it.status) {
+      case "pending_fd": return "คำขอซื้อใหม่ รอ Foreman Day อนุมัติ";
+      case "returned": return "คำขอซื้อถูกส่งกลับ ลองแก้ไขหรือส่งใหม่";
+      case "quotation": return "คุณได้รับมอบหมายคำขอซื้อ · ขอใบเสนอราคาและออก MEMO";
+      case "po_vendor": return j.po_no ? `ออก PO ${j.po_no} แล้ว · รับของเข้าคลังเมื่อของมา` : "MEMO อนุมัติครบแล้ว · รอ Admin ออก PO";
+    }
+  }
   if (it.event === "memo_next") return `MEMO ${j.memo_no ?? ""} รอคุณอนุมัติ (App ${(j.memo_step ?? 0) + 1})`;
   if (it.event === "po_ready") return `ออก PO ${j.po_no ?? ""} แล้ว · นัด Vendor และปิดงาน`;
   if (it.event === "closed") return "ใบงานของคุณปิดงานแล้ว";
@@ -39,7 +52,7 @@ export function headline(it: QueueItem, j: Job): string {
 }
 
 function facts(it: QueueItem, j: Job, users: User[]): [string, string][] {
-  const f: [string, string][] = [["เครื่องจักร", `${j.machine_no} ${j.machine_name ?? ""}`.trim()], ["อาการ / งาน", j.symptom ?? "-"], ["ความเร่งด่วน", j.urgency ?? "-"]];
+  const f: [string, string][] = [["เครื่องจักร", machineText(j.machine_no, j.machine_name)], [j.job_type === "purchase" ? "รายการ" : "อาการ / งาน", j.symptom ?? "-"], ["ความเร่งด่วน", j.urgency ?? "-"]];
   if (j.vendor || j.quotation_amount != null) f.push(["Vendor / ราคา", `${j.vendor ?? "-"} · ${money(j.quotation_amount)}`]);
   if ((it.status === "returned" || it.status === "memo_rejected" || it.event === "cancelled") && j.return_note) f.push(["เหตุผล", j.return_note]);
   f.push(["โดย", nameOf(users, it.actor)]);
@@ -110,7 +123,7 @@ export async function deliver(fetchFn: Fetch, cfg: Config, it: QueueItem, j: Job
 
 // ---------- สรุปรายวัน ----------
 export type Reminder = { id: string; machine_no: string; machine_name?: string; pmcal_kind: string; due_date: string; days_left: number; tier: number; recipients: string[] };
-export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null; hold_reason?: string | null };
+export type Stale = { id: string; machine_no: string | null; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null; hold_reason?: string | null };
 const TIER: Record<number, string> = { 1: "ขั้น 1 (≤ 3 เดือน)", 2: "ขั้น 2 (≤ 2 เดือน)", 3: "ขั้น 3 (≤ 1 เดือน)" };
 const left = (d: number) => d < 0 ? `เกิน ${-d} วัน` : `อีก ${d} วัน`;
 
@@ -169,6 +182,6 @@ export function dailyTeamsCard(rem: Reminder[], stale: Stale[], users: User[], c
   if (rem.length) body.push({ type: "TextBlock", text: `PM / CAL ที่ยังไม่เริ่ม (${rem.length})`, weight: "Bolder", spacing: "Medium" },
     { type: "FactSet", facts: rem.slice(0, 15).map((r) => ({ title: `${r.machine_no} ${r.pmcal_kind}`, value: `${left(r.days_left)} · ${TIER[r.tier]} · ${nameOf(users, r.recipients?.[0] ?? "")}` })) });
   if (stale.length) body.push({ type: "TextBlock", text: `ใบงานค้างเกิน 3 วัน (${stale.length})`, weight: "Bolder", spacing: "Medium" },
-    { type: "FactSet", facts: stale.slice(0, 15).map((s) => ({ title: `${s.id} ${s.machine_no}`, value: `${s.hold_reason ? "พัก: " + s.hold_reason + " · " : ""}ค้าง ${s.idle_days} วัน · รอ ${(s.waiting_on ?? []).map((e) => nameOf(users, e)).join(", ") || "-"}` })) });
+    { type: "FactSet", facts: stale.slice(0, 15).map((s) => ({ title: `${s.id} ${s.machine_no ?? "คำขอซื้อ"}`, value: `${s.hold_reason ? "พัก: " + s.hold_reason + " · " : ""}ค้าง ${s.idle_days} วัน · รอ ${(s.waiting_on ?? []).map((e) => nameOf(users, e)).join(", ") || "-"}` })) });
   return card(body, [{ type: "Action.OpenUrl", title: "เปิดระบบ", url: cfg.appUrl }]);
 }

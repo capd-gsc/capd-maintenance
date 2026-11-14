@@ -1,5 +1,5 @@
 /* CAPD Maintenance v3 — frontend (vanilla JS + Supabase, Login ด้วย Microsoft 365)
-   สิทธิ์จริงตรวจในฐานข้อมูล (supabase/v3_auth.sql) หน้าเว็บแค่ซ่อน/แสดงปุ่มให้ตรงกัน
+   สิทธิ์จริงตรวจในฐานข้อมูล (supabase/install.sql) หน้าเว็บแค่ซ่อน/แสดงปุ่มให้ตรงกัน
    Flow: แก้ไขเอง / Normal (RMT-SAP, FM-K2) / Special (ใบเสนอราคา → MEMO → Manager App → PO / Vendor) / PM-CAL */
 (() => {
 'use strict';
@@ -561,7 +561,7 @@ const VIEWS = {
   },
 
   parts() {
-    if (!D.hasParts) return `<div class="h-row"><h1>คลังอะไหล่</h1></div><div class="empty">ยังไม่ได้เปิดคลังอะไหล่ · Admin รัน supabase/v3_6_parts.sql ใน Supabase</div>`;
+    if (!D.hasParts) return `<div class="h-row"><h1>คลังอะไหล่</h1></div><div class="empty">ยังไม่ได้เปิดคลังอะไหล่ · Admin รัน supabase/install.sql ใน Supabase</div>`;
     let rows = D.parts;
     if (S.pfilter === 'low') rows = lowParts(); else if (S.pfilter === 'off') rows = rows.filter(x => x.active === false); else rows = rows.filter(x => x.active !== false);
     if (S.pq) { const k = S.pq.toLowerCase(); rows = rows.filter(x => [x.part_no, x.name, x.spec, x.location, x.vendor, ...(x.machines || [])].join(' ').toLowerCase().includes(k)); }

@@ -132,4 +132,10 @@ await p.goto(env.url + '?job=' + encodeURIComponent(A)); await p.waitForTimeout(
 await p.fill('#trEmail', U(5)); await p.click('#fTrial button'); await p.waitForTimeout(1200);
 ok((await p.textContent('.h-row h1')).trim() === A, 'email link ?job= opens that job right after login');
 await p.goto(env.url); await p.waitForTimeout(900); ok((await p.textContent('.hello h1')).includes('สวัสดี'), 'next visit opens the home page (link used once)');
+// purchase requests (no machine)
+{ const pj = { id: 'MR-2026-0999', machine_no: null, status: 'po_vendor', job_type: 'purchase', po_no: 'PO-9', symptom: 'ขอซื้อ: Bearing × 4', urgency: 'Normal' };
+  ok(core.headline({ event: 'status', status: 'po_vendor', recipients: [], actor: U(1) }, pj).includes('รับของเข้าคลัง'), 'purchase headline: PO issued → receive into stock');
+  ok(core.headline({ event: 'status', status: 'pending_fd', recipients: [], actor: U(1) }, pj).includes('คำขอซื้อใหม่'), 'purchase headline: new request');
+  const m = core.buildEmail({ event: 'status', status: 'po_vendor', recipients: [U(1)], actor: U(1) }, pj, [], { appUrl: 'https://x' });
+  ok(!/null/.test(m.html) && m.html.includes('ไม่ระบุ'), 'no machine prints ไม่ระบุ, never null'); }
 console.log('errors', perr); await b.close(); await db.end(); process.exit(0);

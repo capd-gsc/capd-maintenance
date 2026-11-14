@@ -5,7 +5,8 @@ const { Client } = require('pg');
 const env = require('./lib/env.js');
 const OUT = path.join(__dirname, 'out');
 
-const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql', 'v3_5_flow.sql', 'v3_6_parts.sql'];
+// ติดตั้งใหม่ = supabase/install.sql · อัปเดต = ฐานข้อมูลรุ่นก่อน (tests/sql/legacy = ไฟล์ที่ใช้จริงก่อน 14 พ.ย. 2026) แล้วรัน install.sql ทับ
+const LEGACY = ['schema.sql', 'trial_open_access.sql', 'setup_v3_trial.sql'];
 const SUITES = [
   { name: 'sql-guard', mode: 'guard' },
   { name: '01-main-flow', mode: 'full' },
@@ -18,7 +19,10 @@ const SUITES = [
   { name: '08-layout', mode: 'trial' },
   { name: '09-cancel-backup-refresh', mode: 'trial' },
   { name: '10-notify', mode: 'trial' },
-  { name: '11-flow-hold-downtime', mode: 'trial' }
+  { name: '11-flow-hold-downtime', mode: 'trial' },
+  { name: '12-parts-purchase', mode: 'trial' },
+  { name: '13-upgrade-legacy-db', mode: 'upgrade' },
+  { name: '12-parts-purchase', mode: 'upgrade', label: '12-parts (after upgrade)' }
 ];
 
 async function resetDb(mode) {
@@ -27,9 +31,18 @@ async function resetDb(mode) {
   const db = new Client(env.pg); await db.connect();
   const run = async f => { try { await db.query(fs.readFileSync(f, 'utf8')); } catch (e) { throw new Error(path.basename(f) + ': ' + e.message); } };
   await run(path.join(__dirname, 'sql/stub.sql'));
-  for (const f of FULL) await run(env.sql(f));
+  if (mode === 'upgrade') {
+    // ฐานข้อมูลรุ่นก่อนที่มีข้อมูลอยู่แล้ว (โหมดทดลองเปิด) → รัน install.sql ทับ
+    for (const f of LEGACY) await run(path.join(__dirname, 'sql/legacy', f));
+    await run(path.join(__dirname, 'fixtures/users_test.sql'));
+    await run(path.join(__dirname, 'sql/legacy_data.sql'));
+    await run(env.sql('install.sql'));
+    await db.end();
+    return null;
+  }
+  await run(env.sql('install.sql'));
   await run(path.join(__dirname, 'fixtures/users_test.sql'));
-  if (mode === 'trial') await run(env.sql('v3_trial_on.sql'));
+  if (mode === 'trial') await run(env.sql('trial_on.sql'));
   let blocked = null;
   if (mode === 'guard') {
     const res = [].concat(await db.query(fs.readFileSync(path.join(__dirname, 'sql/guard_test.sql'), 'utf8')));
@@ -63,7 +76,7 @@ async function resetDb(mode) {
       }
     } catch (e) { fail.push('setup: ' + e.message); }
     totalPass += pass; totalFail += fail.length;
-    console.log(`${fail.length ? '✗' : '✓'} ${s.name.padEnd(26)} ${pass} passed${fail.length ? ', ' + fail.length + ' failed' : ''}${extra}`);
+    console.log(`${fail.length ? '✗' : '✓'} ${(s.label || s.name).padEnd(26)} ${pass} passed${fail.length ? ', ' + fail.length + ' failed' : ''}${extra}`);
     fail.forEach(f => console.log('    ' + f));
   }
   console.log(`\n${totalPass} passed, ${totalFail} failed · screenshots in tests/out/`);

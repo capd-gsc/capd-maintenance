@@ -1,12 +1,4 @@
--- =====================================================================
--- CAPD Maintenance v3 — ใช้งานจริง: Login ด้วย Microsoft 365 + สิทธิ์ตาม Flow ในฐานข้อมูล
--- รันใน SQL Editor หลังจาก schema.sql, trial_open_access.sql, v2_workflow.sql (รันซ้ำได้)
--- ผลของไฟล์นี้:
---   * ปิดโหมดทดลอง (ผู้ที่ไม่ได้ Login อ่าน/เขียนข้อมูลไม่ได้อีก)
---   * ผู้ใช้ = ตาราง app_users (อีเมล @scg.com ที่ Admin เพิ่มไว้เท่านั้นที่เข้าได้)
---   * ฐานข้อมูลตรวจสิทธิ์ทุกขั้นของใบงาน — แก้โค้ดหน้าเว็บก็ข้ามไม่ได้
--- =====================================================================
-
+-- ===== 03 auth: ผู้ใช้ (app_users) · ตรวจสิทธิ์ทุกขั้นของใบงาน · RLS =====
 -- ---------- 1. ผู้ใช้ ----------
 create table if not exists public.app_users (
   email          text primary key check (email = lower(email) and email like '%@' || public.allowed_domain()),
@@ -62,23 +54,6 @@ language sql stable security definer set search_path = public as $$
     select 1 from public.app_users u where u.email = public.my_email() and u.active and u.role = 'foreman_day'
       and (u.fd_type is null or u.fd_type = public.fd_type_of(p_machine)))
 $$;
-
--- profiles เดิมไม่ใช้แล้ว: ให้ trigger สมัครสมาชิกไม่ทำอะไร (กันสมัครไม่ผ่านจาก role ที่เปลี่ยนชนิด)
-create or replace function public.handle_new_user() returns trigger
-language plpgsql security definer set search_path = public as $$ begin return new; end $$;
-
--- ---------- 2. ปิดโหมดทดลอง ----------
-do $$
-declare t text;
-begin
-  foreach t in array array['role_presets','machines','requests','request_logs','documents'] loop
-    execute format('drop policy if exists trial_anon_all on public.%I', t);
-  end loop;
-end $$;
-drop policy if exists "trial anon files" on storage.objects;
-revoke insert, update, delete on public.role_presets, public.machines, public.requests, public.request_logs, public.documents from anon;
-revoke select on public.pmcal_reminders from anon;
-revoke execute on function public.ensure_pmcal_jobs() from anon;
 
 -- ---------- 3. ตรวจสิทธิ์ทุกขั้นของใบงาน ----------
 -- ใบเสนอราคาเทียบราคา + ข้อมูลฟอร์ม MEMO (SC-F-0030) ในใบงาน
@@ -275,7 +250,7 @@ declare p record;
 begin
   -- ลบ policy เดิมทั้งหมดของตารางหลัก แล้วสร้างชุดใหม่
   for p in select policyname, tablename from pg_policies where schemaname = 'public'
-           and tablename in ('app_users','role_presets','profiles','machines','requests','request_logs','documents') loop
+           and tablename in ('app_users','machines','requests','request_logs','documents') loop
     execute format('drop policy if exists %I on public.%I', p.policyname, p.tablename);
   end loop;
 end $$;
@@ -300,7 +275,6 @@ create policy docs_write on public.documents for all to authenticated
   using (public.cur_admin() or public.cur_role() in ('foreman_day','manager'))
   with check (public.cur_admin() or public.cur_role() in ('foreman_day','manager'));
 
-create policy presets_admin on public.role_presets for all to authenticated using (public.cur_admin()) with check (public.cur_admin());
 
 drop policy if exists "photos read" on storage.objects;
 drop policy if exists "photos upload" on storage.objects;

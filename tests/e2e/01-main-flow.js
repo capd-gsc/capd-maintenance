@@ -81,7 +81,7 @@ ok(ms[0].noeng===0,'every machine has Eng,Foreman');
 await p.click('.side-nav [data-nav="machine"]');await W(200);await p.click('[data-scan="M-01"]');await W(400);ok((await p.textContent('#main')).includes('Dashboard 12 เดือนล่าสุด'),'machine dashboard renders');
 await p.screenshot({path:'dash.png',fullPage:true});
 // anon blocked at DB
-const an=await q({op:'select',t:'requests',f:[],order:[],email:''});ok(Array.isArray(an.data)&&an.data.length===0,'anon reads nothing');
+const an=await q({op:'select',t:'requests',f:[],order:[],email:''});ok(!!an.error||(Array.isArray(an.data)&&an.data.length===0),'anon reads nothing');
 // mobile
 await p.setViewportSize({width:390,height:844});await W(200);await p.screenshot({path:'mobile.png',fullPage:false});
 const ov=await p.evaluate(()=>document.documentElement.scrollWidth>window.innerWidth);ok(!ov,'no horizontal scroll at 390px');

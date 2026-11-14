@@ -1,6 +1,6 @@
 // Runs each query from the fake supabase client against real Postgres, as the signed-in user (RLS + triggers apply)
 const {Pool,types}=require('pg');types.setTypeParser(1082,v=>v);
-const PK={machines:'machine_no',app_users:'email',requests:'id',documents:'id'};
+const PK={machines:'machine_no',app_users:'email',requests:'id',documents:'id',spare_parts:'part_no',vendors:'name',part_tx:'id'};
 const id=s=>{if(!/^[a-z_]+$/.test(s))throw new Error('bad ident '+s);return '"'+s+'"'};
 module.exports=async function(){
   const pool=new Pool({...require('./env.js').pg,max:8});

@@ -28,7 +28,7 @@ ok((await row('select approved_by from requests where id=$1',[A]))[0].approved_b
 await p.click('#logout');await W(700);ok(await p.locator('#fTrial').count()===1,'logout returns to login');
 const anon=await q({op:'select',t:'requests',f:[],order:[],email:'',headers:{}});ok(anon.data?.length===0,'no header → sees nothing');
 // turn trial off: header ignored
-await db.query(fs.readFileSync(require('../lib/env.js').sql('v3_trial_off.sql'),'utf8'));
+await db.query(fs.readFileSync(require('../lib/env.js').sql('trial_off.sql'),'utf8'));
 const off=await q({op:'select',t:'requests',f:[],order:[],email:'',headers:{'x-capd-user':'user01@scg.com'}});ok(!off.data?.length,'after trial_off header ignored ('+(off.error?.message||'0 rows')+')');
 const real=await q({op:'select',t:'requests',f:[],order:[],email:'user01@scg.com',headers:{}});ok(real.data?.length>=1,'real login still works after trial_off');
 console.log('errors',errs);await b.close();await db.end();process.exit(0);})();
