@@ -113,6 +113,9 @@ const fdsFor = no => { if (!no) return usersBy('foreman_day').map(p => p.email);
 const canFD = no => isAdmin() || (role() === 'foreman_day' && (!S.me.fd_type || !no || S.me.fd_type === fdTypeOf(no)));
 const canParts = () => isAdmin() || role() === 'foreman_day';   // แก้ทะเบียน / ปรับยอดอะไหล่
 const PT = no => D.parts.find(x => x.part_no === no) || {};
+// อุปกรณ์ประกอบ: เครื่อง/อุปกรณ์ที่ระบุว่าเป็นของเครื่องนี้ (v3.6 parent_machine)
+const kidsOf = no => D.machines.filter(x => x.parent_machine === no);
+const parentTag = m => m.parent_machine ? `<span class="sub">อุปกรณ์ของ <a href="?m=${encodeURIComponent(m.parent_machine)}" class="folio" data-scan="${esc(m.parent_machine)}">${esc(m.parent_machine)}</a></span>` : '';
 const lowParts = () => D.parts.filter(x => x.active !== false && x.min_qty != null && Number(x.stock) <= Number(x.min_qty));
 const qty = v => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const isFD = () => is('foreman_day', 'admin');
@@ -543,7 +546,7 @@ const VIEWS = {
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
     <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Vendor</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
+    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}${m.parent_machine ? '<br>' + parentTag(m) : ''}${kidsOf(m.machine_no).length ? `<br><span class="sub">อุปกรณ์ประกอบ ${kidsOf(m.machine_no).length} รายการ</span>` : ''}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
   },
 
@@ -553,7 +556,7 @@ const VIEWS = {
     return `<div class="h-row"><h1>แผน PM / CAL</h1><span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span></td><td>${x.kind}</td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
+    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}</td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีแผน PM/CAL — ใส่วันที่ล่าสุดและ Interval ในหน้าเครื่องจักร</div>'}`;
   },
 
@@ -672,7 +675,8 @@ const VIEWS = {
     const stp = d => d < 0 ? `<span class="pill s-rej">เกิน ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
     return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span>
       ${isAdmin() ? `<button class="btn ghost" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost" data-qr="${esc(m.machine_no)}">QR</button>` : ''}</div>
-    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Vendor</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div></div>
+    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Vendor</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div>${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span><a href="?m=${encodeURIComponent(m.parent_machine)}" class="folio" data-scan="${esc(m.parent_machine)}">${esc(m.parent_machine)}</a> ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>
+    ${(() => { const ks = kidsOf(m.machine_no); if (!ks.length) return ''; const pl = planList(); return `<h3 class="sec">อุปกรณ์ประกอบ (${ks.length})</h3><div class="tbl-wrap"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>PM / CAL ครบกำหนด</th><th>ใบงานค้าง</th></tr></thead><tbody>${ks.map(k => { const ps = pl.filter(x => x.m.machine_no === k.machine_no), oj = D.requests.filter(q => q.machine_no === k.machine_no && OPEN(q.status)).length; return `<tr><td class="mono"><a href="?m=${encodeURIComponent(k.machine_no)}" class="folio" data-scan="${esc(k.machine_no)}">${esc(k.machine_no)}</a></td><td>${esc(k.machine_name)}<br><span class="sub">${esc(k.model || '')}${k.serial_number ? ' · S/N ' + esc(k.serial_number) : ''}</span></td><td><span class="pill ${k.status === 'Active' ? 's-confirm' : k.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(k.status)}</span></td><td>${ps.length ? ps.map(x => `${x.kind} ${fd(x.next, false)} ${stp(x.days)}`).join('<br>') : '<span class="sub">ไม่มีแผน</span>'}</td><td class="num">${oj || '-'}</td></tr>`; }).join('')}</tbody></table></div>`; })()}
     ${canCreate() ? `<div class="scan-cta"><button class="btn big" data-newfor="${esc(m.machine_no)}">+ แจ้งซ่อม / เปิดใบงานเครื่องนี้</button></div>` : ''}
     <h3 class="sec">ใบงานที่ค้าง (${open.length})</h3>
     ${open.length ? open.map(q => `<div class="jcard">
@@ -1330,18 +1334,23 @@ const MF = [
   ['machine_type', 'Machine Type', OPT.type], ['location', 'Location', OPT.loc], ['status', 'Status', OPT.mstatus], ['priority', 'Priority', OPT.prio],
   ['maintenance_type', 'Maintenance Type', OPT.mtype], ['responsibility', 'Member ผู้รับผิดชอบ (อีเมล)', 'email'], ['eng_foreman', 'Eng, Foreman (อีเมล · ว่าง = ตามประเภทเครื่อง)', 'email'],
   ['supplier', 'Vendor', 'text'], ['contact_person', 'Contact Person', 'text'], ['phone', 'เบอร์โทรศัพท์', 'text'], ['email', 'E-mail Vendor', 'text'], ['other_contact', 'Line / ช่องทางอื่น', 'text'],
-  ['pm_last_date', 'PM ล่าสุด', 'date'], ['pm_interval_month', 'PM Interval (เดือน)', OPT.interval], ['cal_last_date', 'CAL ล่าสุด', 'date'], ['cal_interval_month', 'CAL Interval (เดือน)', OPT.interval]
+  ['pm_last_date', 'PM ล่าสุด', 'date'], ['pm_interval_month', 'PM Interval (เดือน)', OPT.interval], ['cal_last_date', 'CAL ล่าสุด', 'date'], ['cal_interval_month', 'CAL Interval (เดือน)', OPT.interval],
+  ['parent_machine', 'เป็นอุปกรณ์ของเครื่อง (ถ้ามี)', 'parent']
 ];
+const mfFields = () => MF.filter(([k]) => k !== 'parent_machine' || D.hasParts);
 function machineForm(no) {
   const m = no ? M(no) : { status: 'Active', priority: 'Normal', maintenance_type: 'No Plan' };
-  const field = ([k, l, t]) => `<div class="field"><label for="mf-${k}">${l}</label>${Array.isArray(t)
+  const field = ([k, l, t]) => `<div class="field"><label for="mf-${k}">${l}</label>${t === 'parent'
+    ? `<select id="mf-${k}" class="inp"><option value="">— ไม่ใช่ (เป็นเครื่องหลัก) —</option>${D.machines.filter(x => x.machine_no !== no && !x.parent_machine).map(x => `<option value="${esc(x.machine_no)}" ${m.parent_machine === x.machine_no ? 'selected' : ''}>${esc(x.machine_no)} · ${esc(x.machine_name)}</option>`).join('')}</select>`
+    : Array.isArray(t)
     ? `<select id="mf-${k}" class="inp"><option value=""></option>${opts(t, m[k])}</select>`
     : `<input id="mf-${k}" class="inp" type="${t}" value="${esc(m[k] ?? '')}" ${k === 'machine_no' && no ? 'readonly' : ''}>`}</div>`;
-  modal(`<h2>${no ? 'แก้ไขเครื่อง ' + esc(no) : 'เพิ่มเครื่องจักร'}</h2><form id="fMachine" class="form">${MF.map(field).join('')}
+  modal(`<h2>${no ? 'แก้ไขเครื่อง ' + esc(no) : 'เพิ่มเครื่องจักร'}</h2><form id="fMachine" class="form">${mfFields().map(field).join('')}
     <div class="full btns"><button class="btn" type="submit">บันทึก</button><button class="btn ghost" type="button" data-close>ยกเลิก</button>${no ? '<button class="btn bad" type="button" id="mDel">ลบเครื่อง</button>' : ''}</div></form>`);
   $('#fMachine').onsubmit = async e => {
     e.preventDefault();
-    const row = {}; MF.forEach(([k]) => { const val = $('#mf-' + k).value.trim(); row[k] = val === '' ? null : val; });
+    const row = {}; mfFields().forEach(([k]) => { const val = $('#mf-' + k).value.trim(); row[k] = val === '' ? null : val; });
+    if (row.parent_machine && kidsOf(row.machine_no).length) return toast('เครื่องนี้มีอุปกรณ์ประกอบอยู่แล้ว จึงเป็นอุปกรณ์ของเครื่องอื่นไม่ได้');
     if (!row.machine_no || !row.machine_name) return toast('กรอก Machine number และ Machine Name');
     ['pm_interval_month', 'cal_interval_month'].forEach(k => row[k] = row[k] ? parseInt(row[k]) : null);
     row.status ||= 'Active'; row.priority ||= 'Normal'; row.maintenance_type ||= 'No Plan'; row.updated_at = new Date().toISOString();
@@ -1457,6 +1466,14 @@ async function importExcel(file) {
     // upsert แยกตามชุดคอลัมน์ (PostgREST ต้องการคีย์เท่ากันทุกแถว)
     const groups = {}; rows.forEach(r => { const k = Object.keys(r).sort().join(','); (groups[k] ||= []).push(r); });
     for (const g2 of Object.values(groups)) { const { error } = await sb.from('machines').upsert(g2); if (error) throw error; }
+    // คอลัมน์ "อุปกรณ์ของเครื่อง" (ถ้ามี): ใส่หลังบันทึกเครื่องทั้งหมดแล้ว เพื่อให้อ้างเครื่องในไฟล์เดียวกันได้
+    if (D.hasParts) for (const r of mm) {
+      if (!('อุปกรณ์ของเครื่อง' in r || 'parent machine' in r)) continue;
+      const no = String(g(r, 'machine number') || '').trim(); if (!no || skip(no)) continue;
+      const par = String(g(r, 'อุปกรณ์ของเครื่อง', 'parent machine') || '').trim() || null;
+      if (par === no) continue;
+      const { error } = await sb.from('machines').update({ parent_machine: par }).eq('machine_no', no); if (error) throw error;
+    }
     let plan = 0;
     for (const [sh, dk] of [['PM Master', 'pm'], ['CAL Master', 'cal']]) {
       for (const r of (sheet(sh) || []).filter(r => g(r, 'machine number'))) {
@@ -1544,7 +1561,7 @@ function exportRequests() {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Maintenance Requests');
   // หัวคอลัมน์เดียวกับแบบฟอร์ม Excel → แก้แล้วนำเข้ากลับได้
   const mm = D.machines.map(m => ({ 'Machine number': m.machine_no, 'Machine Name': m.machine_name, 'Model': m.model, 'Serial Number': m.serial_number, 'Machine Type': m.machine_type, 'Location': m.location, 'Status': m.status, 'Priority': m.priority, 'Maintenance Type': m.maintenance_type, 'Responsibility': m.responsibility, 'Eng,Foreman': m.eng_foreman,
-    'Vendor': m.supplier, 'Contact Person': m.contact_person, 'เบอร์โทรศัพท์': m.phone, 'E-mail': m.email, 'Line/ช่องทางอื่น': m.other_contact, 'PM DATE': m.pm_last_date, 'PM Interval': m.pm_interval_month, 'CAL DATE': m.cal_last_date, 'CAL Interval': m.cal_interval_month }));
+    'Vendor': m.supplier, 'Contact Person': m.contact_person, 'เบอร์โทรศัพท์': m.phone, 'E-mail': m.email, 'Line/ช่องทางอื่น': m.other_contact, 'PM DATE': m.pm_last_date, 'PM Interval': m.pm_interval_month, 'CAL DATE': m.cal_last_date, 'CAL Interval': m.cal_interval_month, ...(D.hasParts ? { 'อุปกรณ์ของเครื่อง': m.parent_machine || '' } : {}) }));
   XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(mm), 'Machine Master');
   XLSX.writeFile(wb, 'CAPD-Maintenance-' + todayStr() + '.xlsx');
 }
@@ -1751,7 +1768,7 @@ function bind() {
 
   const ms = $('#nMachine');
   if (ms) {
-    ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div></div>` : ''; };
+    ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div>${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span>${esc(m.parent_machine)} ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>` : ''; };
     if (S.prefill) { ms.onchange(); S.prefill = null; }
     const mq = $('#nMachineQ');
     if (mq) mq.oninput = () => { const k = mq.value.trim().toLowerCase(); let first = null, n = 0;

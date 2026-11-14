@@ -44,6 +44,11 @@ create table if not exists public.vendors (
   created_at     timestamptz not null default now()
 );
 
+-- อุปกรณ์ประกอบของเครื่อง (เช่น ตุ้มน้ำหนักมาตรฐาน / Extensometer ของเครื่องทดสอบ) มีแผน CAL ของตัวเอง
+alter table public.machines add column if not exists parent_machine text references public.machines(machine_no) on update cascade on delete set null;
+alter table public.machines drop constraint if exists machines_parent_not_self;
+alter table public.machines add constraint machines_parent_not_self check (parent_machine is distinct from machine_no);
+
 -- คำขอซื้อ: ไม่จำเป็นต้องผูกกับเครื่อง + รายการที่ขอซื้อ
 alter table public.requests alter column machine_no drop not null;
 alter table public.requests add column if not exists items jsonb;   -- [{part_no?, name, qty, unit, recv?, stocked?}]
