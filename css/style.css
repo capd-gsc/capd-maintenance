@@ -387,3 +387,6 @@ tr.chosen td{background:var(--ok-bg)}
 .box.hold{border:1.5px dashed var(--line-2);background:var(--panel-2)}
 details.holdq summary{cursor:pointer;font-weight:600;color:var(--muted)}
 details.holdq[open] summary{color:var(--ink)}
+
+/* คลังอะไหล่ */
+.issue-row{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px;margin-top:6px}

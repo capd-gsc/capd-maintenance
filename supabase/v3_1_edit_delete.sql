@@ -85,9 +85,11 @@ create trigger guard_request before insert or update on public.requests
 -- Admin ลบไฟล์แนบของใบงานได้ (ใช้ตอนลบใบงาน)
 drop policy if exists "photos delete" on storage.objects;
 create policy "photos delete" on storage.objects for delete to authenticated using (bucket_id = 'request-photos' and public.cur_admin());
+create or replace function public.trial_is_on() returns boolean language plpgsql stable as $$
+begin return coalesce((select value from public.app_settings where key = 'trial_login') = 'on', false);
+exception when undefined_table then return false; end $$;
 do $$ begin
-  if exists (select 1 from information_schema.tables where table_schema = 'public' and table_name = 'app_settings')
-     and exists (select 1 from public.app_settings where key = 'trial_login' and value = 'on') then
+  if public.trial_is_on() then
     alter policy "photos delete" on storage.objects to anon, authenticated;   -- โหมดทดลองเปิดอยู่
   end if;
 end $$;

@@ -94,6 +94,7 @@ alter table public.requests
   add column if not exists hold_reason   text,                           -- พักงาน: เหตุผล (ว่าง = ไม่ได้พัก)
   add column if not exists hold_note     text,
   add column if not exists hold_since    timestamptz;                    -- ระบบใส่เวลาให้เอง
+alter table public.requests add column if not exists items jsonb;   -- v3.6: รายการในคำขอซื้อ
 
 create or replace function public.only_changed(o public.requests, n public.requests, cols text[]) returns boolean
 language sql immutable as $$
@@ -123,7 +124,9 @@ begin
       if new.job_type is distinct from 'self_fix' then raise exception 'ปิดงานทันทีได้เฉพาะงานแก้ไขเอง'; end if;
       new.closed_by := me; new.end_at := coalesce(new.end_at, now());
     else
-      new.status := 'pending_fd'; new.job_type := null;
+      new.status := 'pending_fd';
+      new.job_type := case when new.job_type = 'purchase' then 'purchase' else null end;   -- คำขอซื้อ (v3.6)
+      if new.job_type = 'purchase' and jsonb_array_length(coalesce(new.items, '[]')) = 0 then raise exception 'คำขอซื้อต้องมีรายการอย่างน้อย 1 รายการ'; end if;
     end if;
     if new.technician is null then
       select responsibility into new.technician from public.machines where machine_no = new.machine_no;

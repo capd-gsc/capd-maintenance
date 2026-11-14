@@ -5,7 +5,7 @@ const { Client } = require('pg');
 const env = require('./lib/env.js');
 const OUT = path.join(__dirname, 'out');
 
-const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql', 'v3_5_flow.sql'];
+const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql', 'v3_5_flow.sql', 'v3_6_parts.sql'];
 const SUITES = [
   { name: 'sql-guard', mode: 'guard' },
   { name: '01-main-flow', mode: 'full' },

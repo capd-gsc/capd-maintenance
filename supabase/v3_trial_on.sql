@@ -27,11 +27,16 @@ do $$
 declare p record;
 begin
   for p in select schemaname, tablename, policyname from pg_policies
-           where (schemaname = 'public' and tablename in ('app_users','role_presets','machines','requests','request_logs','documents'))
+           where (schemaname = 'public' and tablename in ('app_users','role_presets','machines','requests','request_logs','documents','spare_parts','part_tx','vendors'))
               or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete')) loop
     execute format('alter policy %I on %I.%I to anon, authenticated', p.policyname, p.schemaname, p.tablename);
   end loop;
 end $$;
 grant select, insert, update, delete on public.app_users, public.machines, public.requests, public.request_logs, public.documents to anon;
 grant usage, select on all sequences in schema public to anon;
+do $$ begin
+  if to_regclass('public.spare_parts') is not null then
+    grant select, insert, update, delete on public.spare_parts, public.vendors to anon; grant select, insert on public.part_tx to anon;
+  end if;
+end $$;
 grant execute on function public.ensure_pmcal_jobs() to anon;

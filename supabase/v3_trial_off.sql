@@ -11,7 +11,7 @@ do $$
 declare p record;
 begin
   for p in select schemaname, tablename, policyname from pg_policies
-           where (schemaname = 'public' and tablename in ('app_users','role_presets','machines','requests','request_logs','documents'))
+           where (schemaname = 'public' and tablename in ('app_users','role_presets','machines','requests','request_logs','documents','spare_parts','part_tx','vendors'))
               or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete')) loop
     execute format('alter policy %I on %I.%I to authenticated', p.policyname, p.schemaname, p.tablename);
   end loop;
@@ -19,3 +19,8 @@ end $$;
 revoke insert, update, delete on public.app_users, public.machines, public.requests, public.request_logs, public.documents from anon;
 revoke select on public.app_users, public.requests, public.request_logs, public.documents from anon;
 revoke execute on function public.ensure_pmcal_jobs() from anon;
+do $$ begin
+  if to_regclass('public.spare_parts') is not null then
+    revoke insert, update, delete on public.spare_parts, public.vendors, public.part_tx from anon; revoke select on public.spare_parts, public.vendors, public.part_tx from anon;
+  end if;
+end $$;
