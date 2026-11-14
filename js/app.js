@@ -565,7 +565,7 @@ const VIEWS = {
     const value = D.parts.reduce((a, x) => a + Number(x.stock || 0) * Number(x.unit_price || 0), 0), low = lowParts();
     const openPR = D.requests.filter(q => q.job_type === 'purchase' && OPEN(q.status));
     return `<div class="h-row"><h1>คลังอะไหล่</h1><span class="sub">${D.parts.length} รายการ · มูลค่าคงคลัง ${num2(value)} บาท</span>
-      ${canCreate() ? '<button class="btn" id="prNew">+ คำขอซื้อ</button>' : ''}${canParts() ? '<button class="btn ghost" id="ptAdd">+ เพิ่มอะไหล่</button>' : ''}</div>
+      ${canCreate() ? '<button class="btn" id="prNew">+ คำขอซื้อ</button><button class="btn ghost" id="ptIssue">เบิกอะไหล่</button>' : ''}${canParts() ? '<button class="btn ghost" id="ptAdd">+ เพิ่มอะไหล่</button>' : ''}</div>
     ${low.length ? `<div class="remind"><b>${IC.warn} ต่ำกว่า Min ${low.length} รายการ</b><div class="rrow">${low.slice(0, 6).map(x => `<span><b class="mono">${esc(x.part_no)}</b> ${esc(x.name)} · เหลือ ${qty(x.stock)}/${qty(x.min_qty)}</span>`).join(' · ')}</div>${canCreate() ? '<div><button class="btn sm" id="prLow">ขอซื้อรายการที่ต่ำกว่า Min</button></div>' : ''}</div>` : ''}
     ${openPR.length ? `<h3 class="sec">คำขอซื้อที่ยังไม่ปิด (${openPR.length})</h3>${taskTable(openPR)}<h3 class="sec">ทะเบียนอะไหล่</h3>` : ''}
     <div class="fbar">${[['all', 'ใช้งาน', D.parts.filter(x => x.active !== false).length], ['low', 'ต่ำกว่า Min', low.length], ['off', 'เลิกใช้', D.parts.filter(x => x.active === false).length]].map(([k, l, n]) => `<button class="chip ${(S.pfilter || 'all') === k ? 'on' : ''}" data-pfilter="${k}">${l} <span class="sub">${n}</span></button>`).join('')}
@@ -574,7 +574,7 @@ const VIEWS = {
       ${rows.map(x => { const lo = x.min_qty != null && Number(x.stock) <= Number(x.min_qty); return `<tr><td class="mono"><b>${esc(x.part_no)}</b></td><td>${esc(x.name)}<br><span class="sub">${esc(x.spec || '')}${x.vendor ? ' · ' + esc(x.vendor) : ''}</span></td>
       <td class="num"><span class="pill ${lo ? 's-rej' : 's-confirm'}">${qty(x.stock)} ${esc(x.unit)}</span></td><td class="num">${x.min_qty ?? '-'} / ${x.max_qty ?? '-'}</td><td>${esc(x.location || '-')}</td><td class="num">${x.unit_price != null ? num2(x.unit_price) : '-'}</td>
       <td>${(x.machines || []).map(no => `<a href="#" class="folio" data-scan="${esc(no)}">${esc(no)}</a>`).join(', ') || '-'}</td>
-      <td class="row-actions"><button class="btn ghost sm" data-phist="${esc(x.part_no)}">ประวัติ</button>${canParts() ? `<button class="btn ghost sm" data-padj="${esc(x.part_no)}">ปรับยอด</button><button class="btn ghost sm" data-pedit="${esc(x.part_no)}">แก้ไข</button>` : ''}${canCreate() ? `<button class="btn ghost sm" data-pbuy="${esc(x.part_no)}">ขอซื้อ</button>` : ''}</td></tr>`; }).join('')}
+      <td class="row-actions"><button class="btn ghost sm" data-phist="${esc(x.part_no)}">ประวัติ</button>${canParts() ? `<button class="btn ghost sm" data-padj="${esc(x.part_no)}">ปรับยอด</button><button class="btn ghost sm" data-pedit="${esc(x.part_no)}">แก้ไข</button>` : ''}${canCreate() ? `${Number(x.stock) > 0 ? `<button class="btn ghost sm" data-pissue="${esc(x.part_no)}">เบิก</button>` : ''}<button class="btn ghost sm" data-pbuy="${esc(x.part_no)}">ขอซื้อ</button>` : ''}</td></tr>`; }).join('')}
     </tbody></table></div>` : '<div class="empty">ไม่พบอะไหล่</div>'}`;
   },
 
@@ -693,7 +693,7 @@ const VIEWS = {
       <div class="box"><h3>ค่าใช้จ่ายรายเดือน</h3>${closed.length ? chart : '<div class="empty">ยังไม่มีงานที่ปิดแล้ว</div>'}</div>
       <div class="box"><h3>แผน PM / CAL</h3>${plan.length ? `<dl class="kv">${plan.map(x => `<dt>${x.kind}</dt><dd>ล่าสุด ${fd(x.last)} · ทุก ${x.iv} เดือน<br>ครบกำหนด <b>${fd(x.next)}</b> ${stp(x.days)}${x.job ? ` · <a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a>` : ''}</dd>`).join('')}</dl>` : `<div class="empty">ไม่มีแผน (${esc(m.maintenance_type)})</div>`}
         ${vendorBox(m.machine_no)}
-        ${(() => { const ps = D.parts.filter(x => (x.machines || []).includes(m.machine_no)); return `<h3 style="margin-top:14px">อะไหล่สำรอง (${ps.length})</h3>${ps.length ? `<div class="tbl-wrap"><table><thead><tr><th>Part no</th><th>ชื่อ</th><th class="num">คงเหลือ</th><th>ที่เก็บ</th></tr></thead><tbody>${ps.map(x => `<tr><td class="mono">${esc(x.part_no)}</td><td>${esc(x.name)}</td><td class="num"><span class="pill ${x.min_qty != null && Number(x.stock) <= Number(x.min_qty) ? 's-rej' : 's-confirm'}">${qty(x.stock)} ${esc(x.unit)}</span></td><td>${esc(x.location || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">ยังไม่มีอะไหล่ที่ผูกกับเครื่องนี้</div>'}`; })()}
+        ${(() => { const ps = D.parts.filter(x => (x.machines || []).includes(m.machine_no)); return `<h3 style="margin-top:14px">อะไหล่ / อุปกรณ์ของเครื่อง (${ps.length})</h3>${D.hasParts ? `<div class="btns" style="margin:6px 0">${canCreate() ? `<button class="btn ghost sm" data-missue="${esc(m.machine_no)}">เบิกใช้กับเครื่องนี้</button>` : ''}<button class="btn ghost sm" data-muse="${esc(m.machine_no)}">ประวัติเบิกใช้</button></div>` : ''}${ps.length ? `<div class="tbl-wrap"><table><thead><tr><th>Part no</th><th>ชื่อ</th><th class="num">คงเหลือ</th><th>ที่เก็บ</th></tr></thead><tbody>${ps.map(x => `<tr><td class="mono">${esc(x.part_no)}</td><td>${esc(x.name)}</td><td class="num"><span class="pill ${x.min_qty != null && Number(x.stock) <= Number(x.min_qty) ? 's-rej' : 's-confirm'}">${qty(x.stock)} ${esc(x.unit)}</span></td><td>${esc(x.location || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">ยังไม่มีอะไหล่ที่ผูกกับเครื่องนี้</div>'}`; })()}
         <h3 style="margin-top:14px">เอกสารของเครื่อง (${docs.length})</h3>${docs.length ? docs.map(d => `<div><a href="#" class="folio" data-doc="${d.id}">${esc(d.title)}</a> <span class="sub">${esc(d.kind)}</span></div>`).join('') : '<div class="sub">ยังไม่มีเอกสาร</div>'}</div>
     </div>
     <h3 class="sec">ประวัติการซ่อม / PM / CAL (${closed.length})</h3>
@@ -711,6 +711,7 @@ function stepsHtml(q) {
     normal: [fdStep, ['Admin แจ้ง SAP / K2', ['wait_admin']], ['RMT / FM ซ่อม', ['ext_repair']], ['ปิดงาน', ['closed']]],
     special: [fdStep, ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']], ['ปิดงาน', ['closed']]],
     pmcal: [['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']], ['ปิดงาน', ['closed']]],
+    purchase: [fdStep, ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['ออก PO / รับของ', ['po_vendor']], ['ปิดงาน', ['closed']]],
     none: [fdStep, ['ดำเนินการซ่อม', []], ['ปิดงาน', ['closed']]]
   };
   const plan = plans[q.job_type] || plans.none;
@@ -741,11 +742,11 @@ function closeFields(p, q) {
   </div>`;
 }
 // เบิกอะไหล่จาก Stock ตอนปิดงาน (อะไหล่ของเครื่องนี้ขึ้นก่อน)
-function issueRows(p, mno) {
+function issueRows(p, mno, hint = 'ตัดยอดคลังให้อัตโนมัติ และบวกค่าอะไหล่เข้าค่าใช้จ่าย · ★ = อะไหล่ของเครื่องนี้') {
   const list = D.parts.filter(x => x.active !== false && Number(x.stock) > 0).sort((a, b) => ((b.machines || []).includes(mno) - (a.machines || []).includes(mno)) || a.part_no.localeCompare(b.part_no));
   if (!list.length) return '';
   const o = list.map(x => `<option value="${esc(x.part_no)}">${esc(x.part_no)} · ${esc(x.name)} (คงเหลือ ${qty(x.stock)} ${esc(x.unit)})${(x.machines || []).includes(mno) ? ' ★' : ''}</option>`).join('');
-  return `<div class="field full"><span class="flabel">เบิกอะไหล่จาก Stock</span><span class="hint">ตัดยอดคลังให้อัตโนมัติ และบวกค่าอะไหล่เข้าค่าใช้จ่าย · ★ = อะไหล่ของเครื่องนี้</span>
+  return `<div class="field full"><span class="flabel">เบิกอะไหล่จาก Stock</span><span class="hint">${hint}</span>
     ${[0, 1, 2].map(i => `<div class="issue-row"><select id="${p}Pt${i}" class="inp" aria-label="อะไหล่รายการที่ ${i + 1}"><option value="">— ไม่เบิก —</option>${o}</select><input id="${p}Pq${i}" class="inp" type="number" min="0" step="any" placeholder="จำนวน" aria-label="จำนวนรายการที่ ${i + 1}"></div>`).join('')}</div>`;
 }
 function readIssues(p) {
@@ -978,7 +979,7 @@ function actions(q) {
       let html = '';
       if (isAdmin() && !q.po_no) html += box('Admin: ออก PO', `<div class="form"><div class="field"><label for="poNo">เลขที่ PO *</label><input id="poNo" class="inp"></div><div class="field"><label for="poFiles">ไฟล์ PO</label><input id="poFiles" class="inp" type="file" multiple></div></div><div class="btns" style="margin-top:12px"><button class="btn ok" data-act="po_save">บันทึก PO</button></div>`);
       if (q.job_type === 'purchase' && (q.assignee === me || canFD(q.machine_no) || isAdmin())) {
-        html += box('รับของ แล้วปิดคำขอซื้อ', q.po_no ? receiveForm(q) : '<div class="note">รับของได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
+        html += box('รับของเข้า', q.po_no ? receiveForm(q) : '<div class="note">รับของได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
       } else if (q.assignee === me || canFD(q.machine_no) || isAdmin()) {
         html += box('นัด Vendor เข้าดำเนินการ', `<div class="form"><div class="field"><label for="vdDate">วันนัด Vendor</label><input id="vdDate" class="inp" type="date" value="${esc(q.vendor_date || '')}"></div></div><div class="btns" style="margin-top:12px"><button class="btn" data-act="vendor_date">บันทึกวันนัด</button></div>`);
         html += box('สรุปผลก่อนปิดงาน', q.po_no ? closeFields('pv', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_special">สรุปและปิดงาน</button></div>` : '<div class="note">ปิดงานได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
@@ -1003,21 +1004,27 @@ function holdBox(q) {
 // ---------- คำขอซื้อ ----------
 function itemsTable(q) {
   const it = q.items || []; if (!it.length) return '';
-  return `<div class="tbl-wrap"><table><thead><tr><th>รายการ</th><th>Part no</th><th class="num">จำนวน</th>${it.some(x => x.recv != null) ? '<th class="num">รับแล้ว</th><th>คลัง</th>' : ''}</tr></thead><tbody>${it.map(x => `<tr><td>${esc(x.name)}</td><td class="mono">${esc(x.part_no || '-')}</td><td class="num">${qty(x.qty)} ${esc(x.unit || '')}</td>${it.some(y => y.recv != null) ? `<td class="num">${x.recv != null ? qty(x.recv) : '-'}</td><td>${x.stocked ? '<span class="pill s-confirm">เข้าคลัง</span>' : '<span class="sub">ไม่เก็บ Stock</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+  return `<div class="tbl-wrap"><table><thead><tr><th>รายการ</th><th>Part no</th><th class="num">จำนวน</th>${it.some(x => x.recv != null) ? '<th class="num">รับแล้ว</th><th class="num">ค้าง</th><th>คลัง</th>' : ''}</tr></thead><tbody>${it.map(x => `<tr><td>${esc(x.name)}</td><td class="mono">${esc(x.part_no || '-')}</td><td class="num">${qty(x.qty)} ${esc(x.unit || '')}</td>${it.some(y => y.recv != null) ? `<td class="num">${x.recv != null ? qty(x.recv) : '-'}</td><td class="num">${left(x) ? `<b class="u-High">${qty(left(x))}</b>` : '-'}</td><td>${x.stocked ? '<span class="pill s-confirm">เข้าคลัง</span>' : '<span class="sub">ไม่เก็บ Stock</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
 }
+const left = x => Math.max(0, Math.round((Number(x.qty) - Number(x.recv || 0)) * 1000) / 1000);
 function receiveForm(q) {
-  return `<p class="sub" style="margin-top:0">ใส่จำนวนที่รับจริง · รายการที่มี Part no เข้าคลังอัตโนมัติ${canParts() ? ' · รายการใหม่ติ๊ก “เพิ่มเป็นอะไหล่” เพื่อเปิดรหัสใหม่' : ''}</p>
-  <div class="tbl-wrap"><table class="qtbl"><thead><tr><th>รายการ</th><th class="num">สั่ง</th><th>รับจริง</th><th>คลังอะไหล่</th></tr></thead><tbody>${(q.items || []).map((x, i) => `<tr><td>${esc(x.name)}${x.part_no ? `<br><span class="sub mono">${esc(x.part_no)}</span>` : ''}</td><td class="num">${qty(x.qty)} ${esc(x.unit || '')}</td>
-    <td><input id="rcQ${i}" class="inp" type="number" min="0" step="any" value="${x.qty}" aria-label="รับจริงรายการที่ ${i + 1}"></td>
+  const it = q.items || [], part = it.some(x => Number(x.recv || 0) > 0);
+  return `<p class="sub" style="margin-top:0">ใส่จำนวนที่ได้รับรอบนี้ · ของมาไม่ครบรับบางส่วนก่อนได้ ระบบพักงาน “รอ Vendor” ไว้จนรับครบ · รายการที่มี Part no เข้าคลังอัตโนมัติ${canParts() ? ' · รายการใหม่ติ๊ก “เพิ่มเป็นอะไหล่” เพื่อเปิดรหัสใหม่' : ''}</p>
+  <div class="tbl-wrap"><table class="qtbl"><thead><tr><th>รายการ</th><th class="num">สั่ง</th>${part ? '<th class="num">รับแล้ว</th>' : ''}<th>รับรอบนี้</th><th>คลังอะไหล่</th></tr></thead><tbody>${it.map((x, i) => `<tr><td>${esc(x.name)}${x.part_no ? `<br><span class="sub mono">${esc(x.part_no)}</span>` : ''}</td><td class="num">${qty(x.qty)} ${esc(x.unit || '')}</td>${part ? `<td class="num">${qty(x.recv || 0)}</td>` : ''}
+    <td><input id="rcQ${i}" class="inp" type="number" min="0" step="any" value="${left(x)}" aria-label="รับรอบนี้รายการที่ ${i + 1}"></td>
     <td>${x.part_no ? `<span class="pill s-confirm">เข้าคลัง ${esc(x.part_no)}</span>` : canParts() ? `<label><input type="checkbox" id="rcNew${i}"> เพิ่มเป็นอะไหล่</label><input id="rcPn${i}" class="inp" placeholder="Part no ใหม่" style="margin-top:4px" aria-label="Part no ใหม่รายการที่ ${i + 1}">` : '<span class="sub">ค่าใช้จ่าย ไม่เก็บ Stock</span>'}</td></tr>`).join('')}</tbody></table></div>
-  <div class="form" style="margin-top:10px"><div class="field"><label for="rcNote">หมายเหตุการรับของ</label><input id="rcNote" class="inp" placeholder="เช่น รับครบ ใบส่งของเลขที่ …"></div>
-    <div class="field"><label for="rcFiles">ใบส่งของ / รูป</label><input id="rcFiles" class="inp" type="file" multiple></div></div>
-  <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="recv_close">รับของและปิดคำขอซื้อ</button></div>`;
+  <div class="form" style="margin-top:10px"><div class="field"><label for="rcNote">หมายเหตุการรับของ</label><input id="rcNote" class="inp" placeholder="เช่น ใบส่งของเลขที่ … · ส่วนที่เหลือได้ 25 พ.ย."></div>
+    <div class="field"><label for="rcFiles">ใบส่งของ / รูป</label><input id="rcFiles" class="inp" type="file" multiple></div>
+    <div class="field full"><label><input type="checkbox" id="rcForce"> ปิดคำขอซื้อเลย แม้ยังได้ของไม่ครบ (ไม่รอส่วนที่เหลือ)</label></div></div>
+  <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="recv_close">บันทึกรับของ</button></div>`;
 }
 async function receiveAndClose(q) {
-  const items = (q.items || []).map((x, i) => ({ ...x, recv: parseFloat($('#rcQ' + i)?.value) || 0 }));
+  const items = (q.items || []).map((x, i) => ({ ...x, now: parseFloat($('#rcQ' + i)?.value) || 0 }));
+  if (items.some(x => x.now < 0)) return toast('จำนวนรับต้องไม่ติดลบ');
+  const force = $('#rcForce')?.checked;
+  if (!items.some(x => x.now > 0) && !force) return toast('ใส่จำนวนที่ได้รับ หรือติ๊ก “ปิดคำขอซื้อเลย”');
   const newParts = [];
-  for (const [i, x] of items.entries()) if (!x.part_no && $('#rcNew' + i)?.checked) {
+  for (const [i, x] of items.entries()) if (!x.part_no && x.now > 0 && $('#rcNew' + i)?.checked) {
     const pn = ($('#rcPn' + i)?.value || '').trim();
     if (!pn) return toast('ใส่ Part no ใหม่ของ ' + x.name);
     if (D.parts.some(y => y.part_no === pn)) return toast('Part no ' + pn + ' มีอยู่แล้ว');
@@ -1025,23 +1032,31 @@ async function receiveAndClose(q) {
   }
   $$('[data-act]').forEach(b => b.disabled = true);
   try {
-    const total = items.reduce((a, x) => a + x.recv, 0), price = total && q.quotation_amount ? Math.round(Number(q.quotation_amount) / total * 100) / 100 : null;
+    const price = items.length === 1 && q.quotation_amount && Number(items[0].qty) ? Math.round(Number(q.quotation_amount) / Number(items[0].qty) * 100) / 100 : null;
     for (const x of items) if (x.newPart) {
-      const { error } = await sb.from('spare_parts').insert({ part_no: x.part_no, name: x.name, unit: x.unit || 'ชิ้น', unit_price: items.length === 1 ? price : null, machines: q.machine_no ? [q.machine_no] : [], vendor: q.vendor || null });
+      const { error } = await sb.from('spare_parts').insert({ part_no: x.part_no, name: x.name, unit: x.unit || 'ชิ้น', unit_price: price, machines: q.machine_no ? [q.machine_no] : [], vendor: q.vendor || null });
       if (error) throw error;
     }
-    for (const x of items) if (x.part_no && x.recv > 0) {
-      const { error } = await sb.from('part_tx').insert({ part_no: x.part_no, qty: x.recv, kind: 'receive', request_id: q.id, unit_price: items.length === 1 ? price : null, note: 'รับของจาก ' + q.id });
+    for (const x of items) if (x.part_no && x.now > 0) {
+      const { error } = await sb.from('part_tx').insert({ part_no: x.part_no, qty: x.now, kind: 'receive', request_id: q.id, machine_no: q.machine_no || null, unit_price: price, note: 'รับของจาก ' + q.id });
       if (error) throw error;
       x.stocked = true;
     }
-    const files = await uploadFiles(q.id, 'close', filesOf('rcFiles'));
-    const txt = items.map(x => `${x.name} × ${qty(x.recv)}${x.stocked ? ' (เข้าคลัง ' + x.part_no + ')' : ''}`).join(', ');
+    items.forEach(x => { x.recv = Math.round((Number(x.recv || 0) + x.now) * 1000) / 1000; });
+    const rest = items.filter(x => left(x) > 0), done = !rest.length || force;
+    const txt = items.filter(x => x.now > 0).map(x => `${x.name} × ${qty(x.now)}${x.stocked && x.part_no ? ' (เข้าคลัง ' + x.part_no + ')' : ''}`).join(', ');
+    const restTxt = rest.map(x => `${x.name} ${qty(left(x))} ${x.unit || ''}`.trim()).join(', ');
     const note = ($('#rcNote')?.value || '').trim();
-    const { error } = await sb.from('requests').update({ status: 'closed', items: items.map(({ newPart, ...x }) => x), fix_detail: 'รับของ: ' + txt + (note ? ' · ' + note : ''), parts_used: txt, cost_thb: Number(q.quotation_amount || 0), end_at: new Date().toISOString(), attachments: [...(q.attachments || []), ...files] }).eq('id', q.id);
+    const files = await uploadFiles(q.id, 'close', filesOf('rcFiles'));
+    const clean = items.map(({ newPart, now, ...x }) => x);
+    const all = clean.map(x => `${x.name} × ${qty(x.recv)}`).join(', ');
+    const patch = done
+      ? { status: 'closed', items: clean, fix_detail: 'รับของ: ' + all + (rest.length ? ' · ไม่รอส่วนที่เหลือ: ' + restTxt : '') + (note ? ' · ' + note : ''), parts_used: all, cost_thb: Number(q.quotation_amount || 0), end_at: new Date().toISOString(), attachments: [...(q.attachments || []), ...files] }
+      : { items: clean, hold_reason: 'รอ Vendor / ผู้รับเหมา', hold_note: 'รับของบางส่วนแล้ว ค้าง ' + restTxt + (note ? ' · ' + note : ''), attachments: [...(q.attachments || []), ...files] };
+    const { error } = await sb.from('requests').update(patch).eq('id', q.id);
     if (error) throw error;
-    await addLog(q.id, 'รับของและปิดคำขอซื้อ · ' + txt + (newParts.length ? ' · เพิ่มอะไหล่ใหม่ ' + newParts.join(', ') : ''));
-    toast('รับของและปิดคำขอซื้อแล้ว'); await loadAll(); openDetail(q.id, false);
+    await addLog(q.id, (done ? 'รับของและปิดคำขอซื้อ' : 'รับของบางส่วน') + (txt ? ' · ' + txt : '') + (!done ? ' · ค้าง ' + restTxt : rest.length ? ' · ไม่รอส่วนที่เหลือ ' + restTxt : '') + (newParts.length ? ' · เพิ่มอะไหล่ใหม่ ' + newParts.join(', ') : ''));
+    toast(done ? 'รับของและปิดคำขอซื้อแล้ว' : 'บันทึกรับของบางส่วนแล้ว · ค้าง ' + restTxt); await loadAll(); openDetail(q.id, false);
   } catch (e) { $$('[data-act]').forEach(b => b.disabled = false); fail(e); }
 }
 function purchaseForm(prefill = []) {
@@ -1119,7 +1134,41 @@ async function partHistory(pn) {
   if (error) return fail(error);
   const K = { opening: 'ยอดยกมา', receive: 'รับเข้า', issue: 'เบิกใช้', adjust: 'ปรับยอด' };
   modal(`<h2>ความเคลื่อนไหว ${esc(pn)}</h2><p class="sub" style="margin-top:0">${esc(PT(pn).name || '')} · คงเหลือ ${qty(PT(pn).stock)} ${esc(PT(pn).unit || '')}</p>
-    ${(data || []).length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>ประเภท</th><th class="num">จำนวน</th><th>ใบงาน</th><th>โดย / หมายเหตุ</th></tr></thead><tbody>${data.map(t => `<tr><td class="num">${fd(t.at)}</td><td>${K[t.kind] || t.kind}</td><td class="num ${t.qty < 0 ? 'u-Critical' : ''}">${t.qty > 0 ? '+' : ''}${qty(t.qty)}</td><td>${t.request_id ? `<a href="#" class="folio" data-open-close="${esc(t.request_id)}">${esc(t.request_id)}</a>` : '-'}</td><td>${esc(nm(t.actor))}${t.note ? '<br><span class="sub">' + esc(t.note) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีความเคลื่อนไหว</div>'}
+    ${(data || []).length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>ประเภท</th><th class="num">จำนวน</th><th>ใบงาน / เครื่อง</th><th>โดย / หมายเหตุ</th></tr></thead><tbody>${data.map(t => `<tr><td class="num">${fd(t.at)}</td><td>${K[t.kind] || t.kind}</td><td class="num ${t.qty < 0 ? 'u-Critical' : ''}">${t.qty > 0 ? '+' : ''}${qty(t.qty)}</td><td>${t.request_id ? `<a href="#" class="folio" data-open-close="${esc(t.request_id)}">${esc(t.request_id)}</a>` : ''}${t.machine_no ? `${t.request_id ? '<br>' : ''}<span class="mono sub">${esc(t.machine_no)}</span>` : ''}${t.request_id || t.machine_no ? '' : '-'}</td><td>${esc(nm(t.actor))}${t.note ? '<br><span class="sub">' + esc(t.note) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีความเคลื่อนไหว</div>'}
+    <div class="btns" style="margin-top:12px"><button class="btn ghost" data-close>ปิด</button></div>`);
+  $$('#modal [data-open-close]').forEach(a => a.onclick = e => { e.preventDefault(); closeModal(); openDetail(a.dataset.openClose); });
+}
+
+// เบิกอะไหล่ใช้ทั่วไป / ใช้กับเครื่อง (ไม่มีใบงาน) · ต้องใส่เหตุผล
+function issueForm(pn, mno) {
+  const ms = D.machines.filter(m => m.status !== 'Inactive');
+  modal(`<h2>เบิกอะไหล่</h2><p class="sub" style="margin-top:0">สำหรับเบิกใช้โดยไม่มีใบงานซ่อม เช่น วัสดุสิ้นเปลืองของเครื่องทดสอบ · ถ้าเบิกเพื่อซ่อม ให้เบิกตอนปิดใบงาน</p>
+    <div class="form"><div class="field"><label for="isMachine">ใช้กับเครื่อง</label><select id="isMachine" class="inp"><option value="">— ไม่ระบุ (ใช้ทั่วไป) —</option>${ms.map(m => `<option value="${esc(m.machine_no)}" ${m.machine_no === (mno || (PT(pn).machines || [])[0]) ? 'selected' : ''}>${esc(m.machine_no)} · ${esc(m.machine_name)}</option>`).join('')}</select></div>
+    <div class="field"><label for="isNote">เหตุผล / ใช้ทำอะไร *</label><input id="isNote" class="inp" placeholder="เช่น ใช้ทดสอบ Lot 2611-A"></div></div>
+    <div id="isRows" style="margin-top:10px"></div>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="isGo">บันทึกการเบิก</button><button class="btn ghost" data-close>ยกเลิก</button></div>`);
+  const draw = () => { const cur = [0, 1, 2].map(i => [$('#isPt' + i)?.value, $('#isPq' + i)?.value]); $('#isRows').innerHTML = issueRows('is', $('#isMachine').value, '★ = อะไหล่ของเครื่องที่เลือก'); cur.forEach(([a, b], i) => { if (a && $('#isPt' + i)) { $('#isPt' + i).value = a; $('#isPq' + i).value = b; } }); };
+  draw(); if (pn && $('#isPt0')) { $('#isPt0').value = pn; $('#isPq0').value = 1; }
+  $('#isMachine').onchange = draw;
+  $('#isGo').onclick = async () => {
+    const issues = readIssues('is'); if (!issues) return; if (!issues.length) return toast('เลือกอะไหล่ที่จะเบิก');
+    const note = $('#isNote').value.trim(); if (!note) return toast('ใส่เหตุผลการเบิก');
+    $('#isGo').disabled = true;
+    for (const it of issues) {
+      const { error } = await sb.from('part_tx').insert({ part_no: it.part_no, qty: -it.qty, kind: 'issue', machine_no: $('#isMachine').value || null, note });
+      if (error) { $('#isGo').disabled = false; return fail(error); }
+    }
+    closeModal(); toast('เบิก ' + issueText(issues) + ' แล้ว'); reload();
+  };
+}
+async function machineUsage(mno) {
+  const { data, error } = await sb.from('part_tx').select('*').eq('machine_no', mno).eq('kind', 'issue').order('at', { ascending: false });
+  if (error) return fail(error);
+  const tot = {}; (data || []).forEach(t => { tot[t.part_no] = (tot[t.part_no] || 0) - Number(t.qty); });
+  const cost = (data || []).reduce((a, t) => a - Number(t.qty) * Number(t.unit_price || 0), 0);
+  modal(`<h2>ประวัติเบิกใช้ ${esc(mno)}</h2><p class="sub" style="margin-top:0">${esc(M(mno).machine_name || '')} · ${(data || []).length} ครั้ง · มูลค่ารวม ${num2(cost)} บาท</p>
+    ${Object.keys(tot).length ? `<p>${Object.entries(tot).map(([k, v]) => `<b class="mono">${esc(k)}</b> ${esc(PT(k).name || '')} × ${qty(v)}`).join(' · ')}</p>` : ''}
+    ${(data || []).length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>อะไหล่</th><th class="num">จำนวน</th><th>ใบงาน</th><th>โดย / เหตุผล</th></tr></thead><tbody>${data.map(t => `<tr><td class="num">${fd(t.at)}</td><td><b class="mono">${esc(t.part_no)}</b> ${esc(PT(t.part_no).name || '')}</td><td class="num">${qty(-t.qty)} ${esc(PT(t.part_no).unit || '')}</td><td>${t.request_id ? `<a href="#" class="folio" data-open-close="${esc(t.request_id)}">${esc(t.request_id)}</a>` : '-'}</td><td>${esc(nm(t.actor))}${t.note ? '<br><span class="sub">' + esc(t.note) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีการเบิกใช้กับเครื่องนี้</div>'}
     <div class="btns" style="margin-top:12px"><button class="btn ghost" data-close>ปิด</button></div>`);
   $$('#modal [data-open-close]').forEach(a => a.onclick = e => { e.preventDefault(); closeModal(); openDetail(a.dataset.openClose); });
 }
@@ -1636,6 +1685,10 @@ function bind() {
   $$('[data-pedit]').forEach(b => b.onclick = () => partForm(b.dataset.pedit));
   $$('[data-padj]').forEach(b => b.onclick = () => adjustForm(b.dataset.padj));
   $$('[data-phist]').forEach(b => b.onclick = () => partHistory(b.dataset.phist));
+  $('#ptIssue') && ($('#ptIssue').onclick = () => issueForm());
+  $$('[data-pissue]').forEach(b => b.onclick = () => issueForm(b.dataset.pissue));
+  $$('[data-missue]').forEach(b => b.onclick = () => issueForm(null, b.dataset.missue));
+  $$('[data-muse]').forEach(b => b.onclick = () => machineUsage(b.dataset.muse));
   $$('[data-pbuy]').forEach(b => b.onclick = () => { const x = PT(b.dataset.pbuy); purchaseForm([{ part_no: x.part_no, name: x.name, unit: x.unit, qty: Math.max(1, Number(x.max_qty ?? x.min_qty ?? 1) - Number(x.stock)) }]); });
   $$('[data-pfilter]').forEach(b => b.onclick = () => { S.pfilter = b.dataset.pfilter; render(); });
   $('#qCancel') && ($('#qCancel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) cancelForm(q); });

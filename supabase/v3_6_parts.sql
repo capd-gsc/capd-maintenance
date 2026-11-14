@@ -34,6 +34,7 @@ create table if not exists public.part_tx (
   at          timestamptz not null default now()
 );
 create index if not exists part_tx_part on public.part_tx(part_no, at desc);
+alter table public.part_tx add column if not exists machine_no text references public.machines(machine_no) on update cascade on delete set null;   -- เบิกใช้กับเครื่องไหน
 create table if not exists public.vendors (
   name           text primary key,
   contact_person text, phone text, email text, other_contact text,
@@ -75,7 +76,11 @@ begin
     if not (public.cur_admin() or public.cur_role() = 'foreman_day') then raise exception 'ปรับยอดอะไหล่ได้เฉพาะ Admin / Foreman Day'; end if;
   elsif new.kind = 'issue' then
     if new.qty >= 0 then raise exception 'เบิกอะไหล่ต้องเป็นจำนวนติดลบ'; end if;
-    if new.request_id is null then raise exception 'เบิกอะไหล่ต้องอ้างอิงใบงาน'; end if;
+    -- เบิกจากใบงาน หรือเบิกใช้ทั่วไป (ต้องใส่เหตุผล)
+    if new.request_id is null and coalesce(btrim(new.note), '') = '' then raise exception 'เบิกอะไหล่โดยไม่มีใบงาน ต้องใส่เหตุผล'; end if;
+    if new.request_id is not null and new.machine_no is null then
+      select machine_no into new.machine_no from public.requests where id = new.request_id;
+    end if;
   elsif new.kind = 'receive' then
     select * into r from public.requests where id = new.request_id;
     if new.qty <= 0 or r.id is null or r.job_type <> 'purchase' or r.status <> 'po_vendor'
