@@ -119,7 +119,7 @@ export async function deliver(fetchFn: Fetch, cfg: Config, it: QueueItem, j: Job
 
 // ---------- สรุปรายวัน ----------
 export type Reminder = { id: string; machine_no: string; machine_name?: string; pmcal_kind: string; due_date: string; days_left: number; tier: number; recipients: string[] };
-export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null };
+export type Stale = { id: string; machine_no: string; machine_name?: string; status: string; idle_days: number; waiting_on: string[]; job_type?: string | null; hold_reason?: string | null };
 const TIER: Record<number, string> = { 1: "ขั้น 1 (≤ 3 เดือน)", 2: "ขั้น 2 (≤ 2 เดือน)", 3: "ขั้น 3 (≤ 1 เดือน)" };
 const left = (d: number) => d < 0 ? `เกิน ${-d} วัน` : `อีก ${d} วัน`;
 
@@ -178,7 +178,7 @@ export function dailyTeamsCard(rem: Reminder[], stale: Stale[], users: User[], c
   if (rem.length) body.push({ type: "TextBlock", text: `PM / CAL ที่ยังไม่เริ่ม (${rem.length})`, weight: "Bolder", spacing: "Medium" },
     { type: "FactSet", facts: rem.slice(0, 15).map((r) => ({ title: `${r.machine_no} ${r.pmcal_kind}`, value: `${left(r.days_left)} · ${TIER[r.tier]} · ${nameOf(users, r.recipients?.[0] ?? "")}` })) });
   if (stale.length) body.push({ type: "TextBlock", text: `ใบงานค้างเกิน 3 วัน (${stale.length})`, weight: "Bolder", spacing: "Medium" },
-    { type: "FactSet", facts: stale.slice(0, 15).map((s) => ({ title: `${s.id} ${s.machine_no}`, value: `ค้าง ${s.idle_days} วัน · รอ ${(s.waiting_on ?? []).map((e) => nameOf(users, e)).join(", ") || "-"}` })) });
+    { type: "FactSet", facts: stale.slice(0, 15).map((s) => ({ title: `${s.id} ${s.machine_no}`, value: `${s.hold_reason ? "พัก: " + s.hold_reason + " · " : ""}ค้าง ${s.idle_days} วัน · รอ ${(s.waiting_on ?? []).map((e) => nameOf(users, e)).join(", ") || "-"}` })) });
   return card(body, [{ type: "Action.OpenUrl", title: "เปิดระบบ", url: cfg.appUrl }]);
 }
 

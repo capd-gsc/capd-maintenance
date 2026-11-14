@@ -152,6 +152,7 @@ tr.chosen td{background:var(--ok-bg)}
 .s-parts,.s-rej{background:var(--bad-bg);color:var(--bad)}
 .s-confirm{background:var(--ok-bg);color:var(--ok)}
 .s-done{background:var(--idle-bg);color:var(--idle)}
+.s-hold{background:var(--idle-bg);color:var(--ink);border:1px dashed var(--line-2)}
 .u-Critical{color:var(--bad);font-weight:700}
 .u-High{color:var(--warn);font-weight:600}
 .u-Normal{color:var(--muted)}
@@ -381,3 +382,8 @@ tr.chosen td{background:var(--ok-bg)}
 }
 @media (max-width:420px){ .sheet-grid{grid-template-columns:repeat(2,minmax(0,1fr))} .kv{grid-template-columns:96px 1fr} }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* พักงาน */
+.box.hold{border:1.5px dashed var(--line-2);background:var(--panel-2)}
+details.holdq summary{cursor:pointer;font-weight:600;color:var(--muted)}
+details.holdq[open] summary{color:var(--ink)}

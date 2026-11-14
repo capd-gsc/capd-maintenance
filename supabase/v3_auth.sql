@@ -87,11 +87,21 @@ alter table public.requests
   add column if not exists select_reason text,                          -- เหตุผลที่เลือก Vendor
   add column if not exists quote_reason  text,                          -- เหตุผลที่มีใบเสนอราคาน้อยกว่า 3 ใบ
   add column if not exists memo_doc      jsonb;                         -- ข้อมูลในแบบฟอร์ม MEMO
+-- v3.5: เวลาเครื่องหยุด + พักงาน (รออะไหล่ / รอ Vendor)
+alter table public.requests
+  add column if not exists machine_down  boolean not null default false, -- เครื่องหยุดใช้งานหรือไม่ ตอนแจ้ง
+  add column if not exists down_since    timestamptz,                    -- เครื่องหยุดตั้งแต่ (ใช้คำนวณ Downtime)
+  add column if not exists hold_reason   text,                           -- พักงาน: เหตุผล (ว่าง = ไม่ได้พัก)
+  add column if not exists hold_note     text,
+  add column if not exists hold_since    timestamptz;                    -- ระบบใส่เวลาให้เอง
 
+create or replace function public.only_changed(o public.requests, n public.requests, cols text[]) returns boolean
+language sql immutable as $$
+  select (to_jsonb(n) - (cols || array['updated_at'])) = (to_jsonb(o) - (cols || array['updated_at']))
+$$;
 create or replace function public.only_report_fields_changed(o public.requests, n public.requests) returns boolean
 language sql immutable as $$
-  select (to_jsonb(n) - array['machine_no','symptom','first_fix','urgency','attachments','technician','updated_at'])
-       = (to_jsonb(o) - array['machine_no','symptom','first_fix','urgency','attachments','technician','updated_at'])
+  select public.only_changed(o, n, array['machine_no','symptom','first_fix','urgency','attachments','technician','machine_down','down_since'])
 $$;
 
 create or replace function public.guard_request() returns trigger
@@ -126,9 +136,17 @@ begin
     raise exception 'แก้เลขที่ ผู้เปิด หรือวันที่เปิดใบงานไม่ได้';
   end if;
   new.updated_at := now();
+  -- พักงาน / กลับมาทำต่อ: เวลาเริ่มพักใส่โดยระบบ · เปลี่ยนขั้นแล้วการพักหายเอง
+  if new.hold_reason is distinct from old.hold_reason then new.hold_since := case when new.hold_reason is null then null else now() end; end if;
+  if new.status <> old.status then new.hold_reason := null; new.hold_note := null; new.hold_since := null; end if;
   if sys or adm and new.status = old.status and new.memo_step = old.memo_step then return new; end if;
   if not public.cur_member() then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
   step_app := old.memo_approvers[old.memo_step + 1];
+  if new.status = old.status and public.only_changed(old, new, array['hold_reason','hold_note','hold_since']) then
+    if old.status in ('wait_admin','ext_repair','quotation','memo_rejected','po_vendor')
+       and (me = any(public.next_actors(old)) or public.can_fd(old.machine_no)) then return new; end if;
+    raise exception 'ไม่มีสิทธิ์พักงานใบงานนี้';
+  end if;
   -- ส่ง MEMO แล้ว ใบเสนอราคาและ MEMO ถูกล็อก (แก้ได้อีกเมื่อถูกส่งกลับ หรือโดย Admin)
   if old.status in ('memo_approval','po_vendor','closed') and (
        new.quotes is distinct from old.quotes or new.memo_doc is distinct from old.memo_doc

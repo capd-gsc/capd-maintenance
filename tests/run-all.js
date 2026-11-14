@@ -5,7 +5,7 @@ const { Client } = require('pg');
 const env = require('./lib/env.js');
 const OUT = path.join(__dirname, 'out');
 
-const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql'];
+const FULL = ['schema.sql', 'trial_open_access.sql', 'v2_workflow.sql', 'v3_auth.sql', 'v3_4_notify.sql', 'v3_5_flow.sql'];
 const SUITES = [
   { name: 'sql-guard', mode: 'guard' },
   { name: '01-main-flow', mode: 'full' },
@@ -17,7 +17,8 @@ const SUITES = [
   { name: '07-attachments', mode: 'trial' },
   { name: '08-layout', mode: 'trial' },
   { name: '09-cancel-backup-refresh', mode: 'trial' },
-  { name: '10-notify', mode: 'trial' }
+  { name: '10-notify', mode: 'trial' },
+  { name: '11-flow-hold-downtime', mode: 'trial' }
 ];
 
 async function resetDb(mode) {

@@ -26,6 +26,11 @@ const SCLS = { pending_fd: 's-wait', returned: 's-rej', wait_admin: 's-queue', e
 const STATUS_ORDER = ['pending_fd', 'returned', 'wait_admin', 'ext_repair', 'quotation', 'memo_approval', 'memo_rejected', 'po_vendor', 'closed', 'cancelled'];
 const ATT = { photo: 'รูปแจ้งซ่อม', external: 'หลักฐานแจ้ง SAP / K2', quotation: 'ใบเสนอราคา', memo: 'MEMO', po: 'PO', close: 'รูป / เอกสารหลังซ่อม' };
 const OPEN = s => s !== 'closed' && s !== 'cancelled';
+// พักงาน: ขั้นที่พักได้ และเหตุผล
+const HOLD_STATUSES = ['wait_admin', 'ext_repair', 'quotation', 'memo_rejected', 'po_vendor'];
+const HOLD_REASONS = ['รออะไหล่', 'รอ Vendor / ผู้รับเหมา', 'รอเครื่องหยุดผลิต', 'อื่นๆ'];
+const daysSince = t => Math.max(0, Math.floor((Date.now() - new Date(t)) / 864e5));
+const holdPill = q => q.hold_reason ? `<span class="pill s-hold" title="${esc(q.hold_note || '')}">พัก: ${esc(q.hold_reason)}${q.hold_since ? ' · ' + daysSince(q.hold_since) + ' วัน' : ''}</span>` : '';
 // Direct Purchase MEMO (SC-F-0030)
 const MEMO_TO = 'ผู้จัดการ Application and Material Development';
 const AUTH = [[5000, 'ผจผ.'], [300000, 'ผจส.'], [1000000, 'ผจฝ.'], [Infinity, 'กจก. / รองกจก.']];
@@ -382,7 +387,7 @@ async function openScanner() {
 
 function jobCard(q) {
   const m = M(q.machine_no);
-  return `<button class="jobc" data-open="${esc(q.id)}"><span class="jc-top"><b class="mono">${esc(q.id)}</b>${pill(q.status)}<span class="sp"></span><span class="u-${esc(q.urgency)}">● ${esc(q.urgency)}</span></span>
+  return `<button class="jobc" data-open="${esc(q.id)}"><span class="jc-top"><b class="mono">${esc(q.id)}</b>${pill(q.status)}${holdPill(q)}${q.machine_down && OPEN(q.status) ? '<span class="pill s-rej">เครื่องหยุด</span>' : ''}<span class="sp"></span><span class="u-${esc(q.urgency)}">● ${esc(q.urgency)}</span></span>
     <span class="jc-m"><b>${esc(q.machine_no)}</b> <span class="sub">${esc(m.machine_name || '')}</span></span>
     <span class="jc-s">${esc(q.symptom)}</span>
     <span class="jc-meta"><span>${esc(jobType(q))}</span><span>${fd(q.created_at)}</span>${OPEN(q.status) ? `<span>ถัดไป: <b>${esc(ownerText(q))}</b></span>` : ''}</span></button>`;
@@ -392,7 +397,7 @@ function taskTable(rows, empty = 'ไม่มีรายการ', cardsOnly 
   const cards = `<div class="jobs ${cardsOnly ? '' : 'mob-only'}">${rows.map(jobCard).join('')}</div>`;
   if (cardsOnly) return cards;
   return cards + `<div class="tbl-wrap desk-only"><table><thead><tr><th>#</th><th>ใบงาน</th><th>ประเภท</th><th>สถานะ</th><th>ผู้ดำเนินการถัดไป</th><th>วันที่เปิด</th></tr></thead><tbody>
-  ${rows.map((q, i) => { const m = M(q.machine_no); return `<tr class="click" data-open="${esc(q.id)}"><td class="num sub">${i + 1}</td><td><span class="folio">${esc(q.id)}</span> · <b>${esc(q.machine_no)}</b> <span class="sub">${esc(m.machine_name)}</span><br><span class="sub">${esc(q.symptom)}</span></td><td>${esc(jobType(q))}<br><span class="u-${esc(q.urgency)}">${esc(q.urgency)}</span></td><td>${pill(q.status)}</td><td>${OPEN(q.status) ? esc(ownerText(q)) : '-'}</td><td class="num">${fd(q.created_at)}</td></tr>`; }).join('')}
+  ${rows.map((q, i) => { const m = M(q.machine_no); return `<tr class="click" data-open="${esc(q.id)}"><td class="num sub">${i + 1}</td><td><span class="folio">${esc(q.id)}</span> · <b>${esc(q.machine_no)}</b> <span class="sub">${esc(m.machine_name)}</span><br><span class="sub">${esc(q.symptom)}</span></td><td>${esc(jobType(q))}<br><span class="u-${esc(q.urgency)}">${esc(q.urgency)}</span></td><td>${pill(q.status)}${q.hold_reason ? '<br>' + holdPill(q) : ''}</td><td>${OPEN(q.status) ? esc(ownerText(q)) : '-'}</td><td class="num">${fd(q.created_at)}</td></tr>`; }).join('')}
   </tbody></table></div>`;
 }
 // งานเข้า / ปิด รายสัปดาห์ (8 สัปดาห์ล่าสุด)
@@ -430,9 +435,9 @@ const VIEWS = {
 
   list() {
     let rows = D.requests.slice();
-    if (S.filter === 'open') rows = rows.filter(q => OPEN(q.status)); else if (S.filter !== 'all') rows = rows.filter(q => q.status === S.filter);
+    if (S.filter === 'open') rows = rows.filter(q => OPEN(q.status)); else if (S.filter === 'hold') rows = rows.filter(q => OPEN(q.status) && q.hold_reason); else if (S.filter === 'down') rows = rows.filter(q => OPEN(q.status) && q.machine_down); else if (S.filter !== 'all') rows = rows.filter(q => q.status === S.filter);
     if (S.q) { const k = S.q.toLowerCase(); rows = rows.filter(q => [q.id, q.machine_no, M(q.machine_no).machine_name, q.symptom, q.reporter, q.assignee, q.external_ref, q.memo_no, q.po_no, jobType(q)].join(' ').toLowerCase().includes(k)); }
-    const chips = [['open', 'ยังเปิด', D.requests.filter(q => OPEN(q.status)).length], ['all', 'ทั้งหมด', D.requests.length], ...STATUS_ORDER.map(s => [s, SL[s], D.requests.filter(q => q.status === s).length]).filter(x => x[2])];
+    const chips = [['open', 'ยังเปิด', D.requests.filter(q => OPEN(q.status)).length], ['all', 'ทั้งหมด', D.requests.length], ['down', 'เครื่องหยุด', D.requests.filter(q => OPEN(q.status) && q.machine_down).length], ['hold', 'พักงาน', D.requests.filter(q => OPEN(q.status) && q.hold_reason).length], ...STATUS_ORDER.map(s => [s, SL[s], D.requests.filter(q => q.status === s).length])].filter(x => x[2] || ['open', 'all'].includes(x[0]));
     return `<div class="h-row"><h1>ใบงานทั้งหมด</h1><span class="sub">${rows.length} รายการ</span><button class="btn ghost" id="expReq">Export Excel</button></div>
     <div class="fbar">${chips.map(([k, l, n]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-filter="${k}">${l} <span class="sub">${n}</span></button>`).join('')}
     <div class="sp"></div><label class="sr" for="q">ค้นหา</label><input id="q" class="search" placeholder="ค้นหา เลขที่ / เครื่อง / SAP / MEMO / PO" value="${esc(S.q)}"></div>
@@ -457,12 +462,15 @@ const VIEWS = {
     return `<div class="h-row"><h1>แจ้งซ่อม / เปิดใบงาน</h1><span class="sub">ผู้เปิด: ${esc(S.me.email)}</span></div>
     <form id="fNew" class="form">
       <div class="field full"><label for="nMachine">เครื่องจักร *</label>
+        <input id="nMachineQ" class="inp" type="search" placeholder="พิมพ์ค้นหา รหัส / ชื่อเครื่อง / Location" autocomplete="off" aria-label="ค้นหาเครื่องจักร" style="margin-bottom:6px">
         <select id="nMachine" class="inp" required><option value="">— เลือกจากทะเบียนเครื่องจักร —</option>${ms.map(m => `<option value="${esc(m.machine_no)}" ${m.machine_no === S.prefill ? 'selected' : ''}>${esc(m.machine_no)} · ${esc(m.machine_name)} (${esc(m.location || '-')})</option>`).join('')}</select></div>
       <div class="full" id="mInfo"></div>
       <div class="field full"><label for="nSym">อาการที่พบ *</label><textarea id="nSym" class="inp" rows="3" required></textarea></div>
       <div class="field full"><label for="nFirst">วิธีแก้ไขเบื้องต้นที่ทำไปแล้ว</label><textarea id="nFirst" class="inp" rows="2"></textarea></div>
       <div class="field"><span class="flabel">ความเร่งด่วน *</span><div class="urg">${OPT.prio.map((p, i) => `<label class="u-${p}" for="nUrg${i}"><input type="radio" name="nUrg" id="nUrg${i}" value="${p}" ${p === 'High' ? 'checked' : ''}>${p}</label>`).join('')}</div></div>
       <div class="field"><label for="nPhoto">รูปภาพ</label><input id="nPhoto" type="file" accept="image/*" multiple class="inp"></div>
+      <div class="field"><span class="flabel">เครื่องหยุดหรือไม่</span><label><input type="checkbox" id="nDown"> เครื่องหยุดใช้งาน</label>
+        <div id="nDownBox" hidden style="margin-top:6px"><label for="nDownAt" class="sub">หยุดตั้งแต่ (ใช้คำนวณ Downtime)</label><input id="nDownAt" class="inp" type="datetime-local" value="${localInput(Date.now())}"></div></div>
       <div class="field full choice">
         <label><input type="radio" name="nMode" value="request" id="nModeReq" checked> <b>แก้ไขเองไม่ได้</b> · ส่งให้ Foreman Day อนุมัติซ่อม</label>
         <label><input type="radio" name="nMode" value="self" id="nModeSelf"> <b>แก้ไขเองได้แล้ว</b> · บันทึกวิธีแก้และปิดงานทันที</label>
@@ -477,11 +485,11 @@ const VIEWS = {
     const m = M(q.machine_no);
     const kv = (k, v) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}</dd>`;
     const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => `<span class="attw">${/\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`}${canRemoveAtt(q, x) ? `<button class="attx" data-attdel="${esc(x.path)}" title="ลบไฟล์ ${esc(x.name)}" aria-label="ลบไฟล์ ${esc(x.name)}">×</button>` : ''}</span>`).join('')}</div>` : ''; }).join('') : '';
-    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${canCancel(q) ? '<button class="btn ghost bad-t" id="qCancel">ยกเลิกใบงาน</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
+    return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${holdPill(q)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${canCancel(q) ? '<button class="btn ghost bad-t" id="qCancel">ยกเลิกใบงาน</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
     ${stepsHtml(q)}
     <div class="detail">
       <div class="stack">
-        ${actions(q)}
+        ${actions(q)}${OPEN(q.status) ? holdBox(q) : ''}
         <div class="box"><h3>ข้อมูลใบงาน</h3><dl class="kv">
           ${kv('เครื่องจักร', `<b>${esc(m.machine_no)}</b> · ${esc(m.machine_name)} <span class="sub">${esc(m.location || '')}</span>`)}
           ${kv('ประเภทงาน', esc(jobType(q)))}
@@ -489,6 +497,8 @@ const VIEWS = {
           ${kv('ผู้เปิดใบงาน', esc(nm(q.reporter)) + ' · ' + fd(q.created_at))}
           ${kv('อาการที่พบ', esc(q.symptom))}
           ${kv('วิธีแก้ไขเบื้องต้น', esc(q.first_fix))}
+          ${kv('เครื่องหยุด', q.machine_down ? '<span class="u-Critical">หยุดใช้งาน</span>' + (q.down_since ? ' ตั้งแต่ ' + fd(q.down_since) + (OPEN(q.status) ? ` (${daysSince(q.down_since)} วัน)` : '') : '') : '')}
+          ${kv('พักงาน', q.hold_reason ? esc(q.hold_reason) + (q.hold_note ? ' · ' + esc(q.hold_note) : '') + ' · ตั้งแต่ ' + fd(q.hold_since) : '')}
           ${kv('ครบกำหนด', q.due_date ? fd(q.due_date) + ` (${daysLeft(q.due_date) < 0 ? 'เกิน ' + -daysLeft(q.due_date) : 'อีก ' + daysLeft(q.due_date)} วัน)` : '')}
           ${kv('อนุมัติโดย', q.approved_by ? esc(nm(q.approved_by)) + ' · ' + fd(q.approved_at) : '')}
           ${kv('ผู้รับผิดชอบ', q.assignee ? esc(nm(q.assignee)) : '')}
@@ -685,7 +695,7 @@ function memoChain(q) {
 
 /* ---------- action forms ---------- */
 function closeFields(p, q) {
-  const start = q?.vendor_date ? q.vendor_date + 'T08:00' : q?.start_at ? localInput(q.start_at) : q ? localInput(q.created_at) : localInput(Date.now());
+  const start = q?.down_since ? localInput(q.down_since) : q?.vendor_date ? q.vendor_date + 'T08:00' : q?.start_at ? localInput(q.start_at) : q ? localInput(q.created_at) : localInput(Date.now());
   return `<div class="form">
     <div class="field full"><label for="${p}Fix">วิธีการแก้ไข *</label><textarea id="${p}Fix" class="inp" rows="2"></textarea></div>
     <div class="field"><label for="${p}Cause">สาเหตุ</label><input id="${p}Cause" class="inp"></div>
@@ -909,6 +919,17 @@ function actions(q) {
   return '';
 }
 
+// พักงาน: คนที่ต้องทำขั้นนี้ หรือ Foreman Day ของเครื่อง หรือ Admin (ฐานข้อมูลตรวจซ้ำ)
+const canHold = q => HOLD_STATUSES.includes(q.status) && (isAdmin() || isMine(q) || canFD(q.machine_no));
+function holdBox(q) {
+  if (!canHold(q)) return '';
+  if (q.hold_reason) return `<div class="box hold"><h3>พักงานอยู่: ${esc(q.hold_reason)}</h3><p class="sub" style="margin-top:0">ตั้งแต่ ${fd(q.hold_since)} (${daysSince(q.hold_since)} วัน)${q.hold_note ? ' · ' + esc(q.hold_note) : ''}</p><div class="btns"><button class="btn" data-act="hold_off">ดำเนินการต่อ</button></div></div>`;
+  return `<details class="box holdq"><summary>พักงาน (รออะไหล่ / รอ Vendor)</summary><div class="form" style="margin-top:10px">
+    <div class="field"><label for="hdReason">เหตุผล</label><select id="hdReason" class="inp">${opts(HOLD_REASONS)}</select></div>
+    <div class="field"><label for="hdNote">รายละเอียด</label><input id="hdNote" class="inp" placeholder="เช่น สั่ง Bearing แล้ว คาดว่าได้ 20 พ.ย."></div></div>
+    <div class="btns" style="margin-top:10px"><button class="btn ghost" data-act="hold_on">พักงาน</button></div></details>`;
+}
+
 async function act(a) {
   const q = D.requests.find(x => x.id === S.sel); if (!q) return;
   const me = S.me.email, now = new Date().toISOString(), v = id => ($('#' + id)?.value || '').trim();
@@ -945,6 +966,8 @@ async function act(a) {
         if (q.job_type === 'pmcal') log += ` · อัปเดต ${q.pmcal_kind} ล่าสุดของเครื่องอัตโนมัติ`;
         break;
       }
+      case 'hold_on': patch = { hold_reason: v('hdReason'), hold_note: v('hdNote') || null }; log = 'พักงาน · ' + v('hdReason') + (v('hdNote') ? ' · ' + v('hdNote') : ''); msg = 'พักงานแล้ว'; break;
+      case 'hold_off': patch = { hold_reason: null, hold_note: null }; log = 'ดำเนินการต่อ (เลิกพักงาน: ' + (q.hold_reason || '') + ')'; msg = 'ดำเนินการต่อแล้ว'; break;
       case 'pm_action': patch = { action_at: now }; log = 'Member เริ่มดำเนินการ (ขอใบเสนอราคา)'; msg = 'บันทึกแล้ว หยุดส่งอีเมลเตือน'; break;
       case 'memo_draft': case 'memo_submit': {
         const qs = readQuotes(q); if (!qs) return;
@@ -1454,6 +1477,12 @@ function bind() {
   if (ms) {
     ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div></div>` : ''; };
     if (S.prefill) { ms.onchange(); S.prefill = null; }
+    const mq = $('#nMachineQ');
+    if (mq) mq.oninput = () => { const k = mq.value.trim().toLowerCase(); let first = null, n = 0;
+      [...ms.options].forEach(o => { if (!o.value) return; const hit = !k || o.textContent.toLowerCase().includes(k); o.hidden = !hit; if (hit) { n++; first ||= o; } });
+      if (k && n === 1 && ms.value !== first.value) { ms.value = first.value; ms.onchange(); } };
+    $('#nDown') && ($('#nDown').onchange = () => { $('#nDownBox').hidden = !$('#nDown').checked; const st = $('#sfStart'); if ($('#nDown').checked && st) st.value = $('#nDownAt').value; });
+    $('#nDownAt') && ($('#nDownAt').onchange = () => { const st = $('#sfStart'); if (st) st.value = $('#nDownAt').value; });
     $$('input[name=nMode]').forEach(r => r.onchange = () => { const self = document.querySelector('input[name=nMode]:checked').value === 'self'; $('#selfBox').hidden = !self; $('#bSubmit').textContent = self ? 'บันทึกและปิดงาน' : 'ส่งให้ Foreman Day อนุมัติ'; });
     $('#bSubmit').textContent = 'ส่งให้ Foreman Day อนุมัติ';
     $('#fNew').onsubmit = async e => {
@@ -1465,7 +1494,8 @@ function bind() {
       try {
         const folder = crypto.randomUUID();
         const attachments = [...await uploadFiles(folder, 'photo', filesOf('nPhoto')), ...(self ? await uploadFiles(folder, 'close', filesOf('sfFiles')) : [])];
-        const row = { machine_no: ms.value, reporter: S.me.email, symptom: sym, first_fix: $('#nFirst').value.trim() || null, urgency: document.querySelector('input[name=nUrg]:checked').value, attachments };
+        const down = $('#nDown').checked, downAt = down && $('#nDownAt').value ? new Date($('#nDownAt').value).toISOString() : null;
+        const row = { machine_no: ms.value, reporter: S.me.email, symptom: sym, machine_down: down, down_since: downAt, first_fix: $('#nFirst').value.trim() || null, urgency: document.querySelector('input[name=nUrg]:checked').value, attachments };
         Object.assign(row, self ? { ...closed, job_type: 'self_fix' } : { status: 'pending_fd' });
         const { data, error } = await sb.from('requests').insert(row).select().single();
         if (error) throw error;
