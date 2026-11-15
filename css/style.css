@@ -390,3 +390,67 @@ details.holdq[open] summary{color:var(--ink)}
 
 /* คลังอะไหล่ */
 .issue-row{display:grid;grid-template-columns:minmax(0,1fr) 110px;gap:8px;margin-top:6px}
+
+/* ---------- Flow ---------- */
+.fboard{display:flex;align-items:stretch;gap:0;margin:6px 0 18px;overflow-x:auto;padding:4px 2px 8px}
+.fcol{display:flex;flex-direction:column;justify-content:center}
+.flanes{flex:1;gap:12px;border-left:2px solid var(--line-2);border-right:2px solid var(--line-2);padding:0 14px;min-width:0}
+.flane{display:flex;flex-direction:column;gap:6px;position:relative}
+.flane::before,.flane::after{content:"";position:absolute;top:50%;width:14px;height:2px;background:var(--line-2)}
+.flane::before{left:-14px}.flane::after{right:-14px}
+.flabel{font-size:12px;font-weight:700;color:var(--muted);letter-spacing:.02em}
+.frow{display:flex;align-items:center;gap:0}
+.farr{flex:0 0 22px;height:2px;background:var(--line-2);position:relative;align-self:center}
+.farr::after{content:"";position:absolute;right:-1px;top:-4px;border:5px solid transparent;border-left:7px solid var(--line-2);border-right:0}
+.farr.big{flex-basis:26px}
+.fnode{all:unset;box-sizing:border-box;cursor:pointer;display:flex;flex-direction:column;gap:2px;min-width:150px;flex:1;background:var(--panel);border:1.5px solid var(--line-2);border-radius:14px;padding:10px 12px;transition:border-color .15s,box-shadow .15s}
+.fnode:focus-visible{outline:2px solid var(--p);outline-offset:2px}
+.fnode .fl{font-size:12.5px;font-weight:600;color:var(--muted)}
+.fnode .fc{font-family:var(--f-display);font-size:30px;line-height:1.1;color:var(--ink)}
+.fnode .fs{font-size:12px;color:var(--muted)}
+.fnode.ok{border-color:var(--p);background:var(--p-soft)}
+.fnode.ok .fc{color:var(--p)}
+.fnode.warn{border-color:var(--accent);background:var(--accent-soft)}
+.fnode.warn .fc{color:var(--warn)}
+.fnode.empty{opacity:.75}
+.fnode.sel{box-shadow:0 0 0 3px var(--p);border-color:var(--p)}
+.ftags{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.ftags i,.t-warn,.t-hold,.t-bad{font-style:normal;font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+.t-warn{background:var(--warn-bg);color:var(--warn)}
+.t-hold{background:var(--info-bg);color:var(--info)}
+.t-bad{background:var(--bad-bg);color:var(--bad)}
+.fstart .fnode,.fend .fnode{min-width:140px}
+.fend .fnode.ok{border-color:var(--ok);background:var(--ok-bg)}
+.fend .fnode.ok .fc{color:var(--ok)}
+@keyframes fpulse{0%,100%{box-shadow:0 0 0 4px var(--accent-soft)}50%{box-shadow:0 0 0 8px var(--accent-soft)}}
+.jflow{padding-bottom:6px}
+.jflow-h{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px}
+.jflow-h h3{margin:0}
+.froutes{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 10px}
+.froutes span{font-size:12px;font-weight:600;padding:3px 10px;border-radius:999px;border:1px solid var(--line-2);color:var(--muted)}
+.froutes span.on{background:var(--p);border-color:var(--p);color:var(--p-ink)}
+.froutes span.off{opacity:.45;text-decoration:line-through}
+.jsteps{margin-bottom:6px}
+.jsteps li .m{font-size:11.5px;font-weight:400;color:var(--muted);line-height:1.35;max-width:170px}
+.jsteps li.now .m b{color:var(--warn);font-weight:700}
+.jsteps li.now .c{animation:fpulse 1.8s ease-in-out infinite}
+.jsteps li.skip{opacity:.4}
+.fback{font-size:11px;font-weight:700;color:var(--bad)}
+.fstats .chips{display:flex;gap:6px}
+.bar.slow .fl{background:var(--accent)}
+@media (prefers-reduced-motion:reduce){.jsteps li.now .c{animation:none}}
+@media (max-width:760px){
+  .fboard{flex-direction:column;overflow:visible}
+  .flanes{border:0;border-top:2px solid var(--line-2);border-bottom:2px solid var(--line-2);padding:12px 0}
+  .flane::before,.flane::after{display:none}
+  .frow{flex-direction:column;align-items:stretch}
+  .farr{flex:0 0 18px;width:2px;height:18px}
+  .farr::after{right:-4px;top:auto;bottom:-1px;border:5px solid transparent;border-top:7px solid var(--line-2);border-bottom:0}
+  .farr.big{flex-basis:22px;height:22px}
+  .fnode{min-width:0;flex-direction:row;flex-wrap:wrap;align-items:baseline;column-gap:10px}
+  .fnode .fc{font-size:24px;order:-1}
+  .fnode .fs{flex-basis:100%}
+}
+.fstats .bar{grid-template-columns:minmax(130px,230px) 1fr 120px}
+@media (max-width:760px){.fstats .bar{grid-template-columns:1fr 100px}.fstats .bar .tr{grid-column:1/-1;grid-row:2}}
+.chip[data-fkind]{white-space:nowrap}

@@ -57,6 +57,7 @@ const IC = {
   machine: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg>',
   cal: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M7 2h2v2h6V2h2v2h3v17H4V4h3zm-1 7v10h12V9zm2 2h2v2H8zm4 0h2v2h-2zm-4 4h2v2H8zm4 0h2v2h-2z"/></svg>',
   docs: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h7l2 2h9v11H3z"/></svg>',
+  flow: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="9" width="6" height="6" rx="1.5"/><rect x="16" y="3" width="6" height="6" rx="1.5"/><rect x="16" y="15" width="6" height="6" rx="1.5"/><path d="M8 12h4m0-6v12m0-12h4m-4 12h4"/></svg>',
   report: '<svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="12" width="4" height="9"/><rect x="10" y="7" width="4" height="14"/><rect x="17" y="3" width="4" height="18"/></svg>',
   admin: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M17 7h5M19.5 4.5v5"/></svg>',
   user: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="7.5" r="4.5"/><path d="M3 21c.6-4.6 4.3-7 9-7s8.4 2.4 9 7z"/></svg>',
@@ -167,6 +168,8 @@ async function loadAll() {
   // คลังอะไหล่ + Vendor (v3.6) — ถ้ายังไม่ได้รัน SQL ให้เป็นรายการว่าง
   const [sp, vd] = await Promise.all([sb.from('spare_parts').select('*').order('part_no'), sb.from('vendors').select('*').order('name')]);
   D.parts = sp.error ? [] : sp.data; D.vendors = vd.error ? [] : vd.data; D.hasParts = !sp.error;
+  // ประวัติทุกใบงาน (หน้า Flow / รายงาน) โหลดเมื่อเปิดหน้านั้นครั้งแรก แล้วรีเฟรชพร้อมข้อมูลอื่น
+  if (D.logsAll) { const lg = await sb.from('request_logs').select('request_id, at, action, actor').order('at'); if (!lg.error) D.logsAll = lg.data || []; }
 }
 async function reload() {
   try {
@@ -307,14 +310,14 @@ async function enter(session) {
 }
 
 /* =================== SHELL =================== */
-const NAV_ICON = { home: 'home', new: 'new', list: 'list', approve: 'approve', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
+const NAV_ICON = { home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
 function navItems() {
   const nApprove = D.requests.filter(q => (q.status === 'pending_fd' && isMine(q)) || (q.status === 'memo_approval' && q.memo_approvers[q.memo_step] === S.me.email)).length;
-  const nav = [['home', 'หน้าหลัก', myTasks().length], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ', nApprove], ['machine', 'เครื่องจักร'], ['parts', 'อะไหล่', canParts() ? lowParts().length : 0], ['cal', 'PM / CAL', myReminders().length], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
+  const nav = [['home', 'หน้าหลัก', myTasks().length], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ', nApprove], ['flow', 'Flow งาน'], ['machine', 'เครื่องจักร'], ['parts', 'อะไหล่', canParts() ? lowParts().length : 0], ['cal', 'PM / CAL', myReminders().length], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
   return nav;
 }
-const CRUMBS = { parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+const CRUMBS = { flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
 const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (S.view === 'scan' && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
@@ -498,7 +501,7 @@ const VIEWS = {
     const kv = (k, v) => v == null || v === '' ? '' : `<dt>${k}</dt><dd>${v}</dd>`;
     const att = S.att.length ? Object.entries(ATT).map(([k, label]) => { const a = S.att.filter(x => x.kind === k); return a.length ? `<div class="attg"><span class="sub">${label}</span>${a.map(x => `<span class="attw">${/\.(jpe?g|png|gif|webp)$/i.test(x.name) ? `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}"></a>` : `<a class="file" href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.name)}</a>`}${canRemoveAtt(q, x) ? `<button class="attx" data-attdel="${esc(x.path)}" title="ลบไฟล์ ${esc(x.name)}" aria-label="ลบไฟล์ ${esc(x.name)}">×</button>` : ''}</span>`).join('')}</div>` : ''; }).join('') : '';
     return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${holdPill(q)}${canEdit(q) ? '<button class="btn ghost" id="qEdit">แก้ไข</button>' : ''}${canCancel(q) ? '<button class="btn ghost bad-t" id="qCancel">ยกเลิกใบงาน</button>' : ''}${isAdmin() ? '<button class="btn ghost bad-t" id="qDel">ลบใบงาน</button>' : ''}<button class="btn ghost" data-nav="list">← กลับ</button></div>
-    ${stepsHtml(q)}
+    ${jobFlow(q)}
     <div class="detail">
       <div class="stack">
         ${actions(q)}${OPEN(q.status) ? holdBox(q) : ''}
@@ -596,6 +599,18 @@ const VIEWS = {
     ${hist.length ? `<h3 class="sec">ประวัติการซ่อมที่เกี่ยวข้อง (${hist.length})</h3>${taskTable(hist)}` : ''}`;
   },
 
+  flow() {
+    if (!D.logsAll) ensureLogs();
+    const kinds = [['all', 'ทั้งหมด'], ['repair', 'งานซ่อม'], ['pmcal', 'PM / CAL'], ['purchase', 'คำขอซื้อ']];
+    const cnt = k => D.requests.filter(q => OPEN(q.status) && (k === 'all' || flowKind(q) === k)).length;
+    const b = flowBoard();
+    return `<div class="h-row"><h1>Flow งาน</h1><span class="sub">งานที่ยังไม่ปิด ${cnt('all')} ใบ · กดกล่องเพื่อดูรายการ${D.logsAll ? '' : ' · กำลังโหลดเวลาในแต่ละขั้น…'}</span></div>
+    <div class="fbar">${kinds.map(([k, l]) => `<button class="chip ${(S.fkind || 'all') === k ? 'on' : ''}" data-fkind="${k}">${l} <span class="sub">${cnt(k)}</span></button>`).join('')}</div>
+    ${b.html}
+    <div class="note" style="margin-bottom:14px">สีเขียว = มีงานอยู่ในขั้นนี้ · สีส้ม = มีงานอยู่ในขั้นนี้นานเกิน 3 วัน (คอขวด) · ตัวเลข = จำนวนใบงานตอนนี้</div>
+    ${b.pick ? `<h3 class="sec">${esc(b.pickLabel)} (${b.pick.length})</h3>${taskTable(b.pick.slice().sort((x, y) => stageAge(y) - stageAge(x)), 'ไม่มีใบงานในขั้นนี้')}` : ''}`;
+  },
+
   report() {
     const c = D.requests.filter(q => q.status === 'closed');
     const timed = c.filter(q => q.start_at && q.end_at);
@@ -618,7 +633,8 @@ const VIEWS = {
       <div class="box"><h3>จำนวนใบงานตามประเภท</h3>${bars(byType, 'ใบ', k => esc(k))}</div>
       <div class="box"><h3>ค่าซ่อมตามเครื่อง (บาท)</h3>${bars(byCost, '')}</div>
       <div class="box"><h3>เครื่องที่แจ้งซ่อมบ่อย</h3>${bars(cnt, 'ครั้ง')}</div>
-    </div>`;
+    </div>
+    ${stageStatsHtml()}`;
   },
 
   admin() {
@@ -708,20 +724,153 @@ const VIEWS = {
 };
 
 /* ---------- steps + memo chain ---------- */
-function stepsHtml(q) {
-  const fdStep = ['FD อนุมัติ', ['pending_fd', 'returned']];
-  const plans = {
-    self_fix: [['เปิดใบงาน + แก้ไขเอง', []], ['ปิดงาน', ['closed']]],
-    normal: [fdStep, ['Admin แจ้ง SAP / K2', ['wait_admin']], ['RMT / FM ซ่อม', ['ext_repair']], ['ปิดงาน', ['closed']]],
-    special: [fdStep, ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']], ['ปิดงาน', ['closed']]],
-    pmcal: [['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']], ['ปิดงาน', ['closed']]],
-    purchase: [fdStep, ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['ออก PO / รับของ', ['po_vendor']], ['ปิดงาน', ['closed']]],
-    none: [fdStep, ['ดำเนินการซ่อม', []], ['ปิดงาน', ['closed']]]
-  };
-  const plan = plans[q.job_type] || plans.none;
-  let cur = plan.findIndex(s => s[1].includes(q.status)); if (cur < 0) cur = q.status === 'closed' ? plan.length - 1 : 0;
-  return `<ol class="steps">${plan.map((s, i) => { const st = i < cur || q.status === 'closed' ? 'done' : i === cur ? 'now' : ''; return `<li class="${st}"><span class="c">${st === 'done' ? '✓' : i + 1}</span><span class="t">${s[0]}</span></li>`; }).join('')}</ol>`;
+/* ---------- Flow: ขั้นตอนของใบงาน (ภาพรวม · รายใบ · เวลาเฉลี่ย) ---------- */
+// ขั้นในแผนภาพ: สถานะใดอยู่ขั้นไหน
+const FST = {
+  fd: { l: 'FD อนุมัติ', st: ['pending_fd', 'returned'] },
+  admin: { l: 'Admin แจ้ง SAP / K2', st: ['wait_admin'] },
+  repair: { l: 'RMT / FM ซ่อม', st: ['ext_repair'] },
+  quote: { l: 'ใบเสนอราคา / MEMO', st: ['quotation', 'memo_rejected'] },
+  memo: { l: 'Manager อนุมัติ', st: ['memo_approval'] },
+  po: { l: 'PO / Vendor / รับของ', st: ['po_vendor'] }
+};
+const stageOf = s => Object.keys(FST).find(k => FST[k].st.includes(s)) || (s === 'closed' ? 'closed' : s === 'cancelled' ? 'cancelled' : null);
+const flowKind = q => q.job_type === 'pmcal' ? 'pmcal' : q.job_type === 'purchase' ? 'purchase' : 'repair';
+// สถานะที่ใบงานเข้าไปหลังบันทึกในประวัติ (ข้อความประวัติเขียนโดยหน้าเว็บนี้)
+function statusFromLog(a) {
+  if (/^Foreman Day อนุมัติ/.test(a)) return /Normal/.test(a) ? 'wait_admin' : 'quotation';
+  if (/^Foreman Day ไม่อนุมัติ/.test(a)) return 'returned';
+  if (/^ส่งให้ Foreman Day อนุมัติอีกครั้ง/.test(a)) return 'pending_fd';
+  if (/^Admin แจ้งซ่อม/.test(a)) return 'ext_repair';
+  if (/^ส่ง MEMO/.test(a)) return 'memo_approval';
+  if (/ไม่อนุมัติ MEMO/.test(a)) return 'memo_rejected';
+  if (/อนุมัติ MEMO.*ครบทุกคน/.test(a)) return 'po_vendor';
+  if (/^ยกเลิกใบงาน/.test(a)) return 'cancelled';
+  if (/^รับของและปิดคำขอซื้อ|ปิดงาน/.test(a)) return 'closed';
+  return null;
 }
+// ลำดับสถานะของใบงาน พร้อมเวลาเข้าแต่ละขั้น ผู้ทำ และระยะเวลาที่อยู่ในขั้นนั้น
+function jobTimeline(q, logs) {
+  const ls = (logs || []).slice().sort((a, b) => new Date(a.at) - new Date(b.at));
+  const first = q.job_type === 'self_fix' ? 'closed' : q.job_type === 'pmcal' && !ls.some(l => /^Foreman Day/.test(l.action)) ? 'quotation' : 'pending_fd';
+  const t = [{ status: first, at: q.created_at, by: q.job_type === 'pmcal' ? 'system' : q.reporter }];
+  for (const l of ls) { const s = statusFromLog(l.action); if (s && s !== t[t.length - 1].status) t.push({ status: s, at: l.at, by: l.actor }); }
+  if (t[t.length - 1].status !== q.status) t.push({ status: q.status, at: q.updated_at, by: null });
+  t.forEach((x, i) => { const end = t[i + 1] ? new Date(t[i + 1].at) : OPEN(x.status) ? new Date() : new Date(x.at); x.ms = Math.max(0, end - new Date(x.at)); x.doneBy = t[i + 1]?.by || null; });
+  return t;
+}
+const durText = ms => { const h = ms / 36e5; return h < 1 ? Math.max(1, Math.round(ms / 6e4)) + ' นาที' : h < 24 ? h.toFixed(h < 10 ? 1 : 0) + ' ชม.' : (h / 24).toFixed(h < 240 ? 1 : 0) + ' วัน'; };
+const logsOf = id => (D.logsAll || []).filter(l => l.request_id === id);
+async function ensureLogs(force = false) {
+  if (S.logsLoading || (D.logsAll && !force)) return;
+  S.logsLoading = true;
+  try { const { data, error } = await sb.from('request_logs').select('request_id, at, action, actor').order('at'); if (!error) D.logsAll = data || []; }
+  finally { S.logsLoading = false; }
+  if (['flow', 'report'].includes(S.view)) render();
+}
+// เวลาที่ใบงานอยู่ในขั้นปัจจุบัน
+function stageAge(q) {
+  if (!D.logsAll) return Date.now() - new Date(q.updated_at);
+  const t = jobTimeline(q, logsOf(q.id)); return t[t.length - 1].ms;
+}
+
+// 1) หน้า Flow: ภาพรวมงานทุกใบตามขั้น
+const FLANES = {
+  all: [['self', 'แก้ไขเอง', []], ['normal', 'Normal · RMT / FM', ['admin', 'repair']], ['quote', 'Special · PM/CAL · คำขอซื้อ', ['quote', 'memo', 'po']]],
+  repair: [['self', 'แก้ไขเอง', []], ['normal', 'Normal · RMT / FM', ['admin', 'repair']], ['quote', 'Special · Vendor', ['quote', 'memo', 'po']]],
+  pmcal: [['quote', 'PM / CAL', ['quote', 'memo', 'po']]],
+  purchase: [['quote', 'คำขอซื้อ', ['quote', 'memo', 'po']]]
+};
+function flowNode(key, label, jobs, sub) {
+  const stale = jobs.filter(q => stageAge(q) > 3 * 864e5).length, hold = jobs.filter(q => q.hold_reason).length, down = jobs.filter(q => q.machine_down).length;
+  const avg = jobs.length ? jobs.reduce((a, q) => a + stageAge(q), 0) / jobs.length : 0;
+  const cls = !jobs.length ? 'empty' : stale ? 'warn' : 'ok';
+  return `<button class="fnode ${cls} ${S.fsel === key ? 'sel' : ''}" data-fnode="${key}" aria-pressed="${S.fsel === key}">
+    <span class="fl">${label}</span><b class="fc">${jobs.length}</b>
+    <span class="fs">${sub || (jobs.length ? 'อยู่ในขั้นนี้เฉลี่ย ' + durText(avg) : 'ไม่มีงานค้าง')}</span>
+    ${stale || hold || down ? `<span class="ftags">${stale ? `<i class="t-warn">ค้าง &gt; 3 วัน ${stale}</i>` : ''}${hold ? `<i class="t-hold">พัก ${hold}</i>` : ''}${down ? `<i class="t-bad">เครื่องหยุด ${down}</i>` : ''}</span>` : ''}</button>`;
+}
+function flowBoard() {
+  const kind = S.fkind || 'all';
+  const pool = D.requests.filter(q => kind === 'all' || flowKind(q) === kind);
+  const inSt = k => pool.filter(q => FST[k].st.includes(q.status) && (k === 'fd' || true));
+  const laneJobs = (lane, k) => inSt(k).filter(q => lane === 'normal' ? q.job_type === 'normal' : lane === 'quote' ? q.job_type !== 'normal' : false);
+  const m0 = new Date(); m0.setDate(1); m0.setHours(0, 0, 0, 0);
+  const closedM = pool.filter(q => q.status === 'closed' && new Date(q.end_at || q.updated_at) >= m0);
+  const lanes = FLANES[kind];
+  const sel = {};
+  const fdNode = kind === 'pmcal' ? '' : flowNode('fd', FST.fd.l, (sel.fd = inSt('fd')));
+  const laneHtml = lanes.map(([lane, label, ks]) => {
+    if (lane === 'self') { const c = closedM.filter(q => q.job_type === 'self_fix'); sel.self = c; return `<div class="flane"><span class="flabel">${label}</span><div class="frow">${flowNode('self', 'แก้แล้วปิดทันที', c, 'เดือนนี้ ' + c.length + ' งาน')}</div></div>`; }
+    return `<div class="flane"><span class="flabel">${label}</span><div class="frow">${ks.map((k, i) => { const js = laneJobs(lane, k); sel[lane + ':' + k] = js; return (i ? '<span class="farr" aria-hidden="true"></span>' : '') + flowNode(lane + ':' + k, FST[k].l, js); }).join('')}</div></div>`;
+  }).join('');
+  sel.closed = closedM;
+  const closedNode = flowNode('closed', 'ปิดงานเดือนนี้', closedM, closedM.length ? 'เฉลี่ยเปิด → ปิด ' + durText(closedM.reduce((a, q) => a + (new Date(q.end_at || q.updated_at) - new Date(q.created_at)), 0) / closedM.length) : 'ยังไม่มี');
+  const pick = S.fsel && sel[S.fsel] ? sel[S.fsel] : null;
+  const pickLabel = S.fsel ? (S.fsel === 'fd' ? FST.fd.l : S.fsel === 'closed' ? 'ปิดงานเดือนนี้' : S.fsel === 'self' ? 'แก้ไขเอง (เดือนนี้)' : FST[S.fsel.split(':')[1]]?.l) : '';
+  return { html: `<div class="fboard ${kind === 'pmcal' ? 'nofd' : ''}">
+      ${fdNode ? `<div class="fcol fstart">${fdNode}</div><span class="farr big" aria-hidden="true"></span>` : ''}
+      <div class="fcol flanes">${laneHtml}</div>
+      <span class="farr big" aria-hidden="true"></span>
+      <div class="fcol fend">${closedNode}</div></div>`, pick, pickLabel };
+}
+
+// 2) Flow ของใบงานแต่ละใบ
+function jobFlow(q) {
+  const plans = {
+    self_fix: [['เปิดใบงาน + แก้ไขเอง', ['closed']]],
+    normal: [['FD อนุมัติ', ['pending_fd', 'returned']], ['Admin แจ้ง SAP / K2', ['wait_admin']], ['RMT / FM ซ่อม', ['ext_repair']]],
+    special: [['FD อนุมัติ', ['pending_fd', 'returned']], ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']]],
+    pmcal: [['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / นัด Vendor', ['po_vendor']]],
+    purchase: [['FD อนุมัติ', ['pending_fd', 'returned']], ['ใบเสนอราคา / MEMO', ['quotation', 'memo_rejected']], ['Manager อนุมัติ', ['memo_approval']], ['PO / รับของ', ['po_vendor']]],
+    none: [['FD อนุมัติ', ['pending_fd', 'returned']], ['ดำเนินการ', []]]
+  };
+  const plan = (plans[q.job_type] || plans.none).concat(q.job_type === 'self_fix' ? [] : [['ปิดงาน', ['closed']]]);
+  const tl = jobTimeline(q, S.logs);
+  const steps = plan.map(([label, sts], i) => {
+    const hits = tl.filter(x => sts.includes(x.status));
+    const ms = hits.reduce((a, x) => a + x.ms, 0);
+    const cur = sts.includes(q.status) && OPEN(q.status);
+    const idx = plan.findIndex(p => p[1].includes(q.status));
+    const done = q.status === 'closed' || (idx >= 0 ? i < idx : hits.length > 0 && !cur);
+    const last = hits[hits.length - 1];
+    let meta = '';
+    if (label === 'ปิดงาน' || (q.job_type === 'self_fix')) meta = q.status === 'closed' ? `${esc(nm(q.closed_by || last?.by))} · ${fd(q.end_at || last?.at, false)}` : '';
+    else if (cur) meta = `<b>รอ: ${esc(ownerText(q))}</b> · ${durText(ms)}${q.hold_reason ? ' · พัก: ' + esc(q.hold_reason) : ''}`;
+    else if (done && last) meta = `${esc(nm(last.doneBy))} · ${durText(ms)}`;
+    const back = hits.some(x => x.status === 'returned' || x.status === 'memo_rejected') ? '<span class="fback">มีส่งกลับแก้ไข</span>' : '';
+    return `<li class="${q.status === 'cancelled' && !done ? 'skip' : cur ? 'now' : done ? 'done' : ''}"><span class="c">${done && !cur ? '✓' : i + 1}</span><span class="t">${label}</span>${meta ? `<span class="m">${meta}</span>` : ''}${back}</li>`;
+  }).join('');
+  const total = q.status === 'closed' ? new Date(q.end_at || q.updated_at) - new Date(q.created_at) : Date.now() - new Date(q.created_at);
+  const routes = q.job_type === 'pmcal' || q.job_type === 'purchase' ? '' : `<div class="froutes" aria-label="เส้นทางของใบงาน">${[['self_fix', 'แก้ไขเอง'], ['normal', 'Normal · RMT / FM'], ['special', 'Special · Vendor']].map(([k, l]) => `<span class="${q.job_type === k ? 'on' : q.job_type ? 'off' : ''}">${l}</span>`).join('')}</div>`;
+  return `<div class="jflow box">
+    <div class="jflow-h"><h3>Flow ของใบงาน</h3><span class="sub">${q.status === 'cancelled' ? 'ยกเลิกแล้ว' : q.status === 'closed' ? 'ใช้เวลาทั้งหมด ' + durText(total) : 'เปิดมาแล้ว ' + durText(total)}</span></div>
+    ${routes}<ol class="steps jsteps">${steps}</ol></div>`;
+}
+
+// 3) เวลาเฉลี่ยแต่ละขั้น (งานที่ปิดแล้ว)
+function stageStats(days) {
+  const since = Date.now() - days * 864e5;
+  const done = D.requests.filter(q => q.status === 'closed' && new Date(q.end_at || q.updated_at) >= since && q.job_type !== 'self_fix');
+  const acc = {}; Object.keys(FST).forEach(k => acc[k] = { ms: 0, n: 0 });
+  let lead = 0;
+  done.forEach(q => {
+    const tl = jobTimeline(q, logsOf(q.id)); const per = {};
+    tl.forEach(x => { const k = stageOf(x.status); if (FST[k]) per[k] = (per[k] || 0) + x.ms; });
+    Object.entries(per).forEach(([k, ms]) => { acc[k].ms += ms; acc[k].n++; });
+    lead += new Date(q.end_at || q.updated_at) - new Date(q.created_at);
+  });
+  return { rows: Object.entries(acc).filter(([, v]) => v.n).map(([k, v]) => ({ k, label: FST[k].l, avg: v.ms / v.n, n: v.n })), jobs: done.length, lead: done.length ? lead / done.length : 0 };
+}
+function stageStatsHtml() {
+  const days = S.fdays || 90;
+  if (!D.logsAll) { ensureLogs(); return '<div class="box"><h3>เวลาเฉลี่ยแต่ละขั้น</h3><div class="sub">กำลังโหลดประวัติ…</div></div>'; }
+  const s = stageStats(days), mx = Math.max(1, ...s.rows.map(r => r.avg)), slow = s.rows.reduce((a, r) => !a || r.avg > a.avg ? r : a, null);
+  return `<div class="box fstats"><div class="jflow-h"><h3>เวลาเฉลี่ยแต่ละขั้น</h3><div class="chips">${[30, 90, 365].map(d => `<button class="chip ${days === d ? 'on' : ''}" data-fdays="${d}">${d === 365 ? '1 ปี' : d + ' วัน'}</button>`).join('')}</div></div>
+    <p class="sub" style="margin-top:0">จากใบงานที่ปิดแล้ว ${s.jobs} ใบ (ไม่รวมงานแก้ไขเอง) · เปิด → ปิดเฉลี่ย <b>${s.jobs ? durText(s.lead) : '-'}</b></p>
+    ${s.rows.length ? `<div class="bars">${s.rows.map(r => `<div class="bar ${r === slow && s.rows.length > 1 ? 'slow' : ''}"><span>${esc(r.label)}${r === slow && s.rows.length > 1 ? ' <b class="t-warn">ช้าที่สุด</b>' : ''}</span><div class="tr"><div class="fl" style="width:${r.avg / mx * 100}%"></div></div><span class="v">${durText(r.avg)} <span class="sub">(${r.n} ใบ)</span></span></div>`).join('')}</div>` : '<div class="empty">ยังไม่มีงานที่ปิดในช่วงนี้</div>'}</div>`;
+}
+
 function memoChain(q) {
   const allDone = ['po_vendor', 'closed'].includes(q.status);
   return `<div class="box"><h3>ลำดับการอนุมัติ MEMO ${q.memo_round > 1 ? `<span class="sub">(ส่งครั้งที่ ${q.memo_round})</span>` : ''}</h3><ol class="chain">${q.memo_approvers.map((e, i) => {
@@ -1708,6 +1857,9 @@ function bind() {
   $$('[data-muse]').forEach(b => b.onclick = () => machineUsage(b.dataset.muse));
   $$('[data-pbuy]').forEach(b => b.onclick = () => { const x = PT(b.dataset.pbuy); purchaseForm([{ part_no: x.part_no, name: x.name, unit: x.unit, qty: Math.max(1, Number(x.max_qty ?? x.min_qty ?? 1) - Number(x.stock)) }]); });
   $$('[data-pfilter]').forEach(b => b.onclick = () => { S.pfilter = b.dataset.pfilter; render(); });
+  $$('[data-fkind]').forEach(b => b.onclick = () => { S.fkind = b.dataset.fkind; S.fsel = null; render(); });
+  $$('[data-fnode]').forEach(b => b.onclick = () => { S.fsel = S.fsel === b.dataset.fnode ? null : b.dataset.fnode; render(); });
+  $$('[data-fdays]').forEach(b => b.onclick = () => { S.fdays = +b.dataset.fdays; render(); });
   $('#qCancel') && ($('#qCancel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) cancelForm(q); });
   $('#backupBtn') && ($('#backupBtn').onclick = backupAll);
   $('#qDel') && ($('#qDel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) deleteForm(q); });
