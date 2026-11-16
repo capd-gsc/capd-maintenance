@@ -516,3 +516,53 @@ details.holdq[open] summary{color:var(--ink)}
   .cal-item .ck{grid-column:1;grid-row:2}
   .cal-item .cm{grid-column:2;grid-row:1/3}
 }
+
+/* ---------- รูปเครื่อง ---------- */
+.mgal{display:flex;gap:10px;margin-bottom:12px;align-items:stretch}
+.mg-main{all:unset;box-sizing:border-box;cursor:pointer;flex:0 0 320px;aspect-ratio:4/3;border-radius:var(--r);overflow:hidden;background:var(--panel-2);border:1px solid var(--line);position:relative;display:grid;place-items:center}
+.mg-main img{width:100%;height:100%;object-fit:cover}
+.mg-main.empty{cursor:default;color:var(--muted);gap:6px;font-size:13px;align-content:center;justify-items:center}
+.mg-main.empty svg{width:40px;height:40px;opacity:.5}
+.mg-cap{position:absolute;left:6px;bottom:6px;background:rgba(10,20,18,.65);color:#fff;font-size:11.5px;padding:2px 8px;border-radius:999px}
+.mg-strip{display:flex;flex-wrap:wrap;gap:8px;align-content:flex-start}
+.mg-th{all:unset;box-sizing:border-box;cursor:pointer;width:104px;height:78px;border-radius:10px;overflow:hidden;background:var(--panel-2);border:1px solid var(--line);position:relative}
+.mg-th img{width:100%;height:100%;object-fit:cover}
+.mg-th:focus-visible,.mg-main:focus-visible{outline:2px solid var(--p);outline-offset:2px}
+.mg-add{width:104px;height:78px;border-radius:10px;border:1.5px dashed var(--line-2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:var(--p);font-size:12.5px;font-weight:600;cursor:pointer}
+.mg-add svg{width:20px;height:20px}
+.mrow{display:inline-flex;align-items:center;gap:8px}
+.mthumb{width:36px;height:28px;object-fit:cover;border-radius:6px;background:var(--panel-2)}
+.minfo-ph img{width:100%;max-height:200px;object-fit:cover;border-radius:var(--r);margin-bottom:8px;background:var(--panel-2)}
+.pv-img{background:var(--panel-2);border-radius:12px;display:grid;place-items:center;min-height:240px;overflow:hidden}
+.pv-img img{max-width:100%;max-height:62vh;object-fit:contain}
+.pv-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px}
+.pv-bar .iconbtn{font-size:22px}
+.pv-bar .iconbtn:disabled{opacity:.3;cursor:default}
+
+/* ---------- ติดต่อ ---------- */
+.contacts{margin-bottom:14px}
+.ct-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.ct{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px}
+.ct.main{border-color:var(--p);background:var(--p-soft)}
+.ct-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.ct-a{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.ct-a .btn{text-decoration:none}
+.chip-s{font-size:12.5px;background:var(--panel-2);border-radius:999px;padding:4px 10px}
+.ct-ppl{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.ct-p{display:flex;align-items:center;gap:8px}
+.ct-p>div{flex:1;min-width:0}
+.ct-p .btn{text-decoration:none}
+
+/* ---------- เลือกเครื่องให้ Vendor ---------- */
+.vp-quick{display:flex;flex-wrap:wrap;gap:4px;align-items:center;margin:4px 0 8px}
+.vp-quick .chip{background:var(--panel-2);font-size:12.5px;padding:4px 10px}
+.vp-list{max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:10px;margin-top:6px;padding:4px}
+.vp-item{display:flex;gap:10px;align-items:flex-start;padding:6px 8px;border-radius:8px;cursor:pointer}
+.vp-item:hover{background:var(--panel-2)}
+.vp-item input{margin-top:4px}
+@media (max-width:760px){
+  .mgal{flex-direction:column}
+  .mg-main{flex-basis:auto;width:100%}
+  .mg-th,.mg-add{width:calc(33.3% - 6px);height:auto;aspect-ratio:4/3}
+  .ct-p{flex-wrap:wrap}
+}

@@ -168,6 +168,8 @@ async function loadAll() {
   // คลังอะไหล่ + Vendor (v3.6) — ถ้ายังไม่ได้รัน SQL ให้เป็นรายการว่าง
   const [sp, vd] = await Promise.all([sb.from('spare_parts').select('*').order('part_no'), sb.from('vendors').select('*').order('name')]);
   D.parts = sp.error ? [] : sp.data; D.vendors = vd.error ? [] : vd.data; D.hasParts = !sp.error;
+  // รูปเครื่องจักร (ถ้ายังไม่ได้รัน install.sql รุ่นใหม่ ให้เป็นรายการว่าง)
+  const mp = await sb.from('machine_photos').select('*').order('created_at'); D.mphotos = mp.error ? [] : mp.data; D.hasMPhotos = !mp.error;
   // ประวัติทุกใบงาน (หน้า Flow / รายงาน) โหลดเมื่อเปิดหน้านั้นครั้งแรก แล้วรีเฟรชพร้อมข้อมูลอื่น
   if (D.logsAll) { const lg = await sb.from('request_logs').select('request_id, at, action, actor').order('at'); if (!lg.error) D.logsAll = lg.data || []; }
 }
@@ -317,8 +319,8 @@ function navItems() {
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
   return nav;
 }
-const CRUMBS = { flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
-const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (S.view === 'scan' && k === 'machine');
+const CRUMBS = { vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
   dirty = false; lastSync = Date.now();
@@ -545,11 +547,11 @@ const VIEWS = {
   machine() {
     let rows = D.machines;
     if (S.mq) { const k = S.mq.toLowerCase(); rows = rows.filter(m => Object.values(m).join(' ').toLowerCase().includes(k)); }
-    return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>
+    return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>${D.hasParts ? '<button class="btn ghost" data-nav="vendors">Vendor</button>' : ''}
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
     <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Vendor</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${rows.map(m => `<tr><td class="mono"><a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></td><td>${esc(m.machine_name)}${m.parent_machine ? '<br>' + parentTag(m) : ''}${kidsOf(m.machine_no).length ? `<br><span class="sub">อุปกรณ์ประกอบ ${kidsOf(m.machine_no).length} รายการ</span>` : ''}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
+    ${rows.map(m => `<tr><td class="mono"><span class="mrow">${mPhotos(m.machine_no)[0] ? imgTag(mPhotos(m.machine_no)[0].path, '', 'mthumb') : ''}<a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></span></td><td>${esc(m.machine_name)}${m.parent_machine ? '<br>' + parentTag(m) : ''}${kidsOf(m.machine_no).length ? `<br><span class="sub">อุปกรณ์ประกอบ ${kidsOf(m.machine_no).length} รายการ</span>` : ''}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
   },
 
@@ -598,6 +600,17 @@ const VIEWS = {
     ${rows.map(d => `<tr><td><span class="folio">${esc(d.title)}</span> ${d.restricted ? '<span class="lock">จำกัดสิทธิ์</span>' : ''}<br><span class="sub">${esc(d.tags)}</span></td><td>${esc(d.kind)}</td><td class="mono">${esc(d.machine_no || '-')}</td><td class="num">${fd(d.created_at, false)}</td><td class="row-actions"><button class="btn ghost sm" data-doc="${d.id}">เปิด</button>${canWrite ? `<button class="btn ghost sm" data-docdel="${d.id}">ลบ</button>` : ''}</td></tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ไม่พบเอกสาร</div>'}
     ${hist.length ? `<h3 class="sec">ประวัติการซ่อมที่เกี่ยวข้อง (${hist.length})</h3>${taskTable(hist)}` : ''}`;
+  },
+
+  vendors() {
+    if (!D.hasParts) return '<div class="empty">ยังไม่ได้เปิดใช้ทะเบียน Vendor · Admin รัน supabase/install.sql</div>';
+    let rows = D.vendors.slice();
+    if (S.vq) { const k = S.vq.toLowerCase(); rows = rows.filter(v => [v.name, v.work_type, v.contact_person, v.phone, v.email, ...(v.machines || [])].join(' ').toLowerCase().includes(k)); }
+    return `<div class="h-row"><button class="btn ghost" data-nav="machine">← เครื่องจักร</button><h1>Vendor</h1><span class="sub">${D.vendors.length} ราย · 1 ราย ผูกได้หลายเครื่อง กดชื่อเพื่อแก้ไข</span>${canCreate() ? '<button class="btn" id="vAdd">+ เพิ่ม Vendor</button>' : ''}</div>
+    <div class="fbar"><span class="sub">นำเข้าหลายรายพร้อมกันได้จากชีท Vendors ใน Excel (หน้าอะไหล่)</span><div class="sp"></div><label class="sr" for="vq">ค้นหา Vendor</label><input id="vq" class="search" placeholder="ค้นหา ชื่อ / เครื่อง / เบอร์" value="${esc(S.vq || '')}"></div>
+    ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Vendor</th><th>ประเภทงาน</th><th>ผู้ติดต่อ</th><th>ติดต่อ</th><th>ใช้กับเครื่อง</th></tr></thead><tbody>${rows.map(v => `<tr class="${v.active === false ? 'off' : ''}"><td><a href="#" class="folio" data-vedit="${esc(v.name)}">${esc(v.name)}</a></td><td>${esc(v.work_type || '-')}</td><td>${esc(v.contact_person || '-')}</td>
+      <td>${v.phone ? String(v.phone).split(/[,/]/).map(p => `<a href="${esc(telHref(p.trim()))}">${esc(p.trim())}</a>`).join('<br>') : ''}${v.email ? `${v.phone ? '<br>' : ''}<a href="mailto:${esc(v.email)}">${esc(v.email)}</a>` : ''}${!v.phone && !v.email ? '-' : ''}</td>
+      <td>${(v.machines || []).length ? `<span class="pill s-queue">${v.machines.length} เครื่อง</span> <span class="sub">${v.machines.slice(0, 4).map(esc).join(', ')}${v.machines.length > 4 ? ' …' : ''}</span>` : '<span class="sub">ยังไม่ได้เลือกเครื่อง</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มี Vendor</div>'}`;
   },
 
   flow() {
@@ -692,7 +705,9 @@ const VIEWS = {
     const stp = d => d < 0 ? `<span class="pill s-rej">เกิน ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
     return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name)}</h1><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span>
       ${isAdmin() ? `<button class="btn ghost" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost" data-qr="${esc(m.machine_no)}">QR</button>` : ''}</div>
-    <div class="mcard"><div><span>Type</span>${esc(m.machine_type || '-')}</div><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Foreman Day</span>${esc(fdsFor(m.machine_no).map(nm).join(', ') || '-')}</div><div><span>Vendor</span>${esc(m.supplier || '-')} ${esc(m.phone || '')}</div>${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span><a href="?m=${encodeURIComponent(m.parent_machine)}" class="folio" data-scan="${esc(m.parent_machine)}">${esc(m.parent_machine)}</a> ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>
+    ${machineGallery(m)}
+    <div class="mcard">${[['Type', m.machine_type], ['Model', m.model], ['Serial', m.serial_number], ['Location', m.location], ['Priority', m.priority], ['Maintenance', m.maintenance_type], ['PM', m.pm_interval_month ? 'ทุก ' + m.pm_interval_month + ' เดือน' : ''], ['CAL', m.cal_interval_month ? 'ทุก ' + m.cal_interval_month + ' เดือน' : '']].filter(x => x[1]).map(([k, v]) => `<div><span>${k}</span>${esc(v)}</div>`).join('')}${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span><a href="?m=${encodeURIComponent(m.parent_machine)}" class="folio" data-scan="${esc(m.parent_machine)}">${esc(m.parent_machine)}</a> ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>
+    ${machineContacts(m)}
     ${(() => { const ks = kidsOf(m.machine_no); if (!ks.length) return ''; const pl = planList(); return `<h3 class="sec">อุปกรณ์ประกอบ (${ks.length})</h3><div class="tbl-wrap"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>PM / CAL ครบกำหนด</th><th>ใบงานค้าง</th></tr></thead><tbody>${ks.map(k => { const ps = pl.filter(x => x.m.machine_no === k.machine_no), oj = D.requests.filter(q => q.machine_no === k.machine_no && OPEN(q.status)).length; return `<tr><td class="mono"><a href="?m=${encodeURIComponent(k.machine_no)}" class="folio" data-scan="${esc(k.machine_no)}">${esc(k.machine_no)}</a></td><td>${esc(k.machine_name)}<br><span class="sub">${esc(k.model || '')}${k.serial_number ? ' · S/N ' + esc(k.serial_number) : ''}</span></td><td><span class="pill ${k.status === 'Active' ? 's-confirm' : k.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(k.status)}</span></td><td>${ps.length ? ps.map(x => `${x.kind} ${fd(x.next, false)} ${stp(x.days)}`).join('<br>') : '<span class="sub">ไม่มีแผน</span>'}</td><td class="num">${oj || '-'}</td></tr>`; }).join('')}</tbody></table></div>`; })()}
     ${canCreate() ? `<div class="scan-cta"><button class="btn big" data-newfor="${esc(m.machine_no)}">+ แจ้งซ่อม / เปิดใบงานเครื่องนี้</button></div>` : ''}
     <h3 class="sec">ใบงานที่ค้าง (${open.length})</h3>
@@ -717,6 +732,7 @@ const VIEWS = {
         ${(() => { const ps = D.parts.filter(x => (x.machines || []).includes(m.machine_no)); return `<h3 style="margin-top:14px">อะไหล่ / อุปกรณ์ของเครื่อง (${ps.length})</h3>${D.hasParts ? `<div class="btns" style="margin:6px 0">${canCreate() ? `<button class="btn ghost sm" data-missue="${esc(m.machine_no)}">เบิกใช้กับเครื่องนี้</button>` : ''}<button class="btn ghost sm" data-muse="${esc(m.machine_no)}">ประวัติเบิกใช้</button></div>` : ''}${ps.length ? `<div class="tbl-wrap"><table><thead><tr><th>Part no</th><th>ชื่อ</th><th class="num">คงเหลือ</th><th>ที่เก็บ</th></tr></thead><tbody>${ps.map(x => `<tr><td class="mono">${esc(x.part_no)}</td><td>${esc(x.name)}</td><td class="num"><span class="pill ${x.min_qty != null && Number(x.stock) <= Number(x.min_qty) ? 's-rej' : 's-confirm'}">${qty(x.stock)} ${esc(x.unit)}</span></td><td>${esc(x.location || '-')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">ยังไม่มีอะไหล่ที่ผูกกับเครื่องนี้</div>'}`; })()}
         <h3 style="margin-top:14px">เอกสารของเครื่อง (${docs.length})</h3>${docs.length ? docs.map(d => `<div><a href="#" class="folio" data-doc="${d.id}">${esc(d.title)}</a> <span class="sub">${esc(d.kind)}</span></div>`).join('') : '<div class="sub">ยังไม่มีเอกสาร</div>'}</div>
     </div>
+    ${(() => { const jp = jobPhotos(m.machine_no); return jp.length ? `<h3 class="sec">รูปจากใบงาน (${jp.length})</h3><div class="mg-strip jp">${jp.map((x, i) => `<button class="mg-th" data-jpview="${i}" aria-label="รูปจาก ${esc(x.q.id)}">${imgTag(x.path, 'รูปจาก ' + x.q.id)}<span class="mg-cap">${esc(x.q.id)}</span></button>`).join('')}</div>` : ''; })()}
     <h3 class="sec">ประวัติการซ่อม / PM / CAL (${closed.length})</h3>
     ${closed.length ? `<div class="tbl-wrap"><table><thead><tr><th>เลขที่</th><th>ประเภท</th><th>อาการ / วิธีแก้</th><th>สาเหตุ</th><th>อะไหล่</th><th>Downtime</th><th>ค่าใช้จ่าย</th><th>เสร็จ</th></tr></thead><tbody>
       ${closed.map(q => `<tr class="click" data-open="${esc(q.id)}"><td class="mono">${esc(q.id)}</td><td>${esc(jobType(q))}</td><td>${esc(q.symptom)}<br><span class="sub">${esc(q.fix_detail || '')}</span></td><td>${esc(q.root_cause || '-')}</td><td>${esc(q.parts_used || '-')}</td><td class="num">${q.downtime_min ?? '-'}</td><td class="num">${q.cost_thb != null ? Number(q.cost_thb).toLocaleString() : '-'}</td><td class="num">${fd(q.end_at, false)}</td></tr>`).join('')}
@@ -1283,6 +1299,143 @@ function adjustForm(pn) {
     closeModal(); toast(`ปรับยอด ${pn} ${d > 0 ? '+' : ''}${qty(d)}`); reload();
   };
 }
+/* ---------- รูปเครื่องจักร ---------- */
+const mPhotos = no => (D.mphotos || []).filter(x => x.machine_no === no).sort((a, b) => (b.is_main - a.is_main) || String(a.created_at).localeCompare(String(b.created_at)));
+const canPhotoAdmin = () => isAdmin() || role() === 'foreman_day';
+// ลิงก์รูปจาก Storage (ส่วนตัว): ขอทีละชุดแล้วใส่ src ให้รูปที่รออยู่
+const URLS = {}; const signQ = new Set(); let signT = null;
+function photoUrl(path) {
+  const c = URLS[path]; if (c && c.exp > Date.now()) return c.url;
+  signQ.add(path); clearTimeout(signT); signT = setTimeout(flushSign, 20); return '';
+}
+async function flushSign() {
+  const ps = [...signQ]; signQ.clear(); if (!ps.length) return;
+  const { data } = await sb.storage.from('request-photos').createSignedUrls(ps, 3600);
+  (data || []).forEach((d, i) => { if (d?.signedUrl) URLS[ps[i]] = { url: d.signedUrl, exp: Date.now() + 50 * 60e3 }; });
+  $$('img[data-ph]').forEach(img => { const u = URLS[img.dataset.ph]; if (u && img.getAttribute('src') !== u.url) img.src = u.url; });
+}
+const imgTag = (path, alt, cls = '') => { const u = photoUrl(path); return `<img class="${cls}" data-ph="${esc(path)}" alt="${esc(alt)}" ${u ? `src="${esc(u)}"` : ''}>`; };
+const isImgFile = a => /\.(jpe?g|png|webp|gif)$/i.test(a.name || a.path || '');
+// รูปจากใบงานของเครื่อง (ล่าสุดก่อน)
+function jobPhotos(no) {
+  const out = [];
+  D.requests.filter(q => q.machine_no === no).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).forEach(q => {
+    (q.photos || []).forEach(p => out.push({ path: p, q }));
+    (q.attachments || []).filter(isImgFile).forEach(a => out.push({ path: a.path, q }));
+  });
+  return out.slice(0, 12);
+}
+function machineGallery(m) {
+  if (!D.hasMPhotos) return '';
+  const ps = mPhotos(m.machine_no), main = ps[0];
+  const add = canAddPhoto() ? `<label class="mg-add" for="mpAdd">${IC.plus}<span>เพิ่มรูป</span></label><input id="mpAdd" type="file" accept="image/*" multiple hidden data-mp="${esc(m.machine_no)}">` : '';
+  return `<div class="mgal">${main ? `<button class="mg-main" data-mpview="${main.id}" aria-label="ดูรูป ${esc(m.machine_no)}">${imgTag(main.path, 'รูปเครื่อง ' + m.machine_no)}${main.caption ? `<span class="mg-cap">${esc(main.caption)}</span>` : ''}</button>` : `<div class="mg-main empty">${IC.machine}<span>ยังไม่มีรูปเครื่อง</span></div>`}
+    <div class="mg-strip">${ps.slice(1).map(x => `<button class="mg-th" data-mpview="${x.id}" aria-label="ดูรูป">${imgTag(x.path, x.caption || 'รูปเครื่อง')}</button>`).join('')}${add}</div></div>`;
+}
+const canAddPhoto = () => !!S.me;   // ทุกคนเพิ่มรูปได้ · ลบ / เลือกรูปหลัก เฉพาะ Admin / Foreman Day
+async function addMachinePhotos(no, files) {
+  if (!files.length) return;
+  toast('กำลังอัปโหลด ' + files.length + ' รูป…');
+  try {
+    const up = await uploadFiles('machines/' + no, 'photo', [...files].filter(f => /^image\//.test(f.type)));
+    for (const u of up) { const { error } = await sb.from('machine_photos').insert({ machine_no: no, path: u.path }); if (error) throw error; }
+    toast('เพิ่มรูปแล้ว'); reload();
+  } catch (e) { fail(e); }
+}
+function photoViewer(list, idx, opts = {}) {
+  const x = list[idx]; if (!x) return;
+  const isM = !!x.id && !x.q;
+  modal(`<div class="pv"><div class="pv-img">${imgTag(x.path, x.caption || 'รูป')}</div>
+    <div class="pv-bar"><button class="iconbtn ghosty" data-pv="-1" aria-label="รูปก่อนหน้า" ${idx ? '' : 'disabled'}>‹</button><span class="sub">${idx + 1} / ${list.length}${isM ? ` · เพิ่มโดย ${esc(nm(x.uploaded_by))} · ${fd(x.created_at, false)}` : x.q ? ` · <a href="#" class="folio" data-pv-job="${esc(x.q.id)}">${esc(x.q.id)}</a> ${esc(x.q.symptom || '').slice(0, 40)}` : ''}</span><button class="iconbtn ghosty" data-pv="1" aria-label="รูปถัดไป" ${idx < list.length - 1 ? '' : 'disabled'}>›</button></div>
+    ${isM ? `<div class="form" style="margin-top:8px"><div class="field full"><label for="pvCap">คำอธิบายรูป</label><input id="pvCap" class="inp" value="${esc(x.caption || '')}" placeholder="เช่น Nameplate, ตู้ควบคุม" ${canPhotoAdmin() ? '' : 'readonly'}></div></div>` : ''}
+    <div class="btns" style="margin-top:10px">${isM && canPhotoAdmin() ? `<button class="btn ghost" data-pva="cap">บันทึกคำอธิบาย</button>${x.is_main ? '<span class="pill s-confirm">รูปหลัก</span>' : '<button class="btn ghost" data-pva="main">ตั้งเป็นรูปหลัก</button>'}<button class="btn ghost bad-t" data-pva="del">ลบรูป</button>` : ''}<button class="btn ghost" data-close>ปิด</button></div></div>`, 'wide');
+  $$('#modal [data-pv]').forEach(b => b.onclick = () => photoViewer(list, idx + Number(b.dataset.pv), opts));
+  $$('#modal [data-pv-job]').forEach(a => a.onclick = e => { e.preventDefault(); closeModal(); openDetail(a.dataset.pvJob); });
+  $$('#modal [data-pva]').forEach(b => b.onclick = async () => {
+    const a = b.dataset.pva; b.disabled = true;
+    const r = a === 'del' ? await sb.from('machine_photos').delete().eq('id', x.id) : await sb.from('machine_photos').update(a === 'main' ? { is_main: true } : { caption: $('#pvCap').value.trim() || null }).eq('id', x.id);
+    if (r.error) { b.disabled = false; return fail(r.error); }
+    if (a === 'del') { try { await sb.storage.from('request-photos').remove([x.path]); } catch (e) { /* ไฟล์ค้างได้ ไม่กระทบการใช้งาน */ } }
+    closeModal(); toast(a === 'del' ? 'ลบรูปแล้ว' : 'บันทึกแล้ว'); reload();
+  });
+}
+
+/* ---------- ติดต่อ (Vendor + ผู้รับผิดชอบ) ---------- */
+const telHref = p => 'tel:' + String(p).replace(/[^\d+]/g, '');
+const teamsChat = e => 'https://teams.microsoft.com/l/chat/0/0?users=' + encodeURIComponent(e);
+function contactCard(v, main) {
+  const ph = v.phone ? String(v.phone).split(/[,/]/).map(s => s.trim()).filter(Boolean) : [];
+  return `<div class="ct ${main ? 'main' : ''}"><div class="ct-h"><b>${esc(v.name)}</b>${main ? '<span class="pill s-confirm">Vendor หลัก</span>' : v.work_type ? `<span class="pill s-queue">${esc(v.work_type)}</span>` : ''}</div>
+    ${v.contact_person ? `<div class="sub">${esc(v.contact_person)}</div>` : ''}
+    <div class="ct-a">${ph.map(p => `<a class="btn ghost sm" href="${esc(telHref(p))}">📞 ${esc(p)}</a>`).join('')}${v.email ? `<a class="btn ghost sm" href="mailto:${esc(v.email)}">✉️ ${esc(v.email)}</a>` : ''}${v.other_contact ? `<span class="chip-s">${esc(v.other_contact)}</span>` : ''}${!ph.length && !v.email && !v.other_contact ? '<span class="sub">ยังไม่มีข้อมูลติดต่อ</span>' : ''}</div></div>`;
+}
+function machineContacts(m) {
+  const linked = (D.vendors || []).filter(v => v.active !== false && (v.machines || []).includes(m.machine_no));
+  const mainRow = m.supplier ? { ...(linked.find(v => v.name === m.supplier) || {}), name: m.supplier, contact_person: m.contact_person || linked.find(v => v.name === m.supplier)?.contact_person, phone: m.phone || linked.find(v => v.name === m.supplier)?.phone, email: m.email || linked.find(v => v.name === m.supplier)?.email, other_contact: m.other_contact || linked.find(v => v.name === m.supplier)?.other_contact } : null;
+  const others = linked.filter(v => v.name !== m.supplier);
+  const ppl = [[m.responsibility, 'Member ผู้รับผิดชอบ'], ...fdsFor(m.machine_no).map(e => [e, 'Foreman Day'])].filter(x => x[0]);
+  return `<div class="box contacts"><div class="jflow-h"><h3>ติดต่อ</h3><div class="btns">${D.hasParts ? `<button class="btn ghost sm" data-vlink="${esc(m.machine_no)}">+ Vendor</button><button class="btn ghost sm" data-nav="vendors">รายชื่อ Vendor ทั้งหมด</button>` : ''}</div></div>
+    <div class="ct-grid">${mainRow ? contactCard(mainRow, true) : ''}${others.map(v => contactCard(v)).join('')}${!mainRow && !others.length ? '<div class="sub">ยังไม่มี Vendor ของเครื่องนี้ · กด “+ Vendor” เพื่อเพิ่ม</div>' : ''}</div>
+    ${ppl.length ? `<div class="ct-ppl">${ppl.map(([e, r]) => `<div class="ct-p">${avatar(e, 's')}<div><b>${esc(nm(e))}</b><div class="sub">${r}</div></div><a class="btn ghost sm" href="${esc(teamsChat(e))}" target="_blank" rel="noopener">แชท Teams</a><a class="btn ghost sm" href="mailto:${esc(e)}">อีเมล</a></div>`).join('')}</div>` : ''}</div>`;
+}
+
+/* ---------- Vendor: 1 ราย ผูกได้หลายเครื่อง ---------- */
+const canVendorEdit = () => isAdmin() || role() === 'foreman_day';
+function vendorPicker(sel) {
+  const ms = D.machines.filter(m => m.status !== 'Inactive');
+  const locs = [...new Set(ms.map(m => m.location).filter(Boolean))], types = [...new Set(ms.map(m => m.machine_type).filter(Boolean))];
+  return `<div class="field full"><span class="flabel">ใช้กับเครื่อง <b id="vpN">${sel.size}</b> เครื่อง</span>
+    <div class="vp-quick"><span class="sub">เลือกทั้งกลุ่ม:</span>${locs.map(l => `<button type="button" class="chip" data-vpg="location" data-vpv="${esc(l)}">${esc(l)}</button>`).join('')}${types.map(t => `<button type="button" class="chip" data-vpg="machine_type" data-vpv="${esc(t)}">${esc(t)}</button>`).join('')}<button type="button" class="chip" data-vpclear>ล้าง</button></div>
+    <label class="sr" for="vpQ">ค้นหาเครื่อง</label><input id="vpQ" class="inp" placeholder="ค้นหาเครื่อง / Location">
+    <div class="vp-list">${ms.map(m => `<label class="vp-item" data-vpi="${esc([m.machine_no, m.machine_name, m.location, m.machine_type].join(' ').toLowerCase())}"><input type="checkbox" value="${esc(m.machine_no)}" ${sel.has(m.machine_no) ? 'checked' : ''}><span><b class="mono">${esc(m.machine_no)}</b> ${esc(m.machine_name)}<br><span class="sub">${esc(m.location || '')}${m.parent_machine ? ' · อุปกรณ์ของ ' + esc(m.parent_machine) : ''}</span></span></label>`).join('')}</div></div>`;
+}
+function bindPicker() {
+  const boxes = () => [...$$('#modal .vp-item input')];
+  const count = () => { $('#vpN').textContent = boxes().filter(b => b.checked).length; };
+  boxes().forEach(b => b.onchange = count);
+  $('#vpQ').oninput = () => { const k = $('#vpQ').value.trim().toLowerCase(); $$('#modal .vp-item').forEach(l => { l.hidden = !!k && !l.dataset.vpi.includes(k); }); };
+  $$('#modal [data-vpg]').forEach(c => c.onclick = () => { const set = D.machines.filter(m => m[c.dataset.vpg] === c.dataset.vpv).map(m => m.machine_no); const on = !boxes().filter(b => set.includes(b.value)).every(b => b.checked); boxes().forEach(b => { if (set.includes(b.value)) b.checked = on; }); count(); });
+  $('#modal [data-vpclear]').onclick = () => { boxes().forEach(b => b.checked = false); count(); };
+}
+function vendorForm(name, presetMachine) {
+  const v = name ? (D.vendors.find(x => x.name === name) || { name }) : { machines: presetMachine ? [presetMachine] : [], active: true };
+  const ro = name && !canVendorEdit();
+  const f = (k, l, ph = '') => `<div class="field"><label for="vf-${k}">${l}</label><input id="vf-${k}" class="inp" value="${esc(v[k] ?? '')}" placeholder="${ph}" ${ro ? 'readonly' : ''}></div>`;
+  modal(`<h2>${name ? 'Vendor: ' + esc(name) : 'เพิ่ม Vendor'}</h2>
+    <form id="fVendor" class="form">${f('name', 'ชื่อ Vendor *')}<div class="field"><label for="vf-work_type">ประเภทงาน</label><input id="vf-work_type" class="inp" list="vfWT" value="${esc(v.work_type || '')}" ${ro ? 'readonly' : ''}><datalist id="vfWT"><option>ซ่อม</option><option>CAL</option><option>PM</option><option>อะไหล่</option><option>ผู้รับเหมา</option></datalist></div>
+    ${f('contact_person', 'ชื่อผู้ติดต่อ')}${f('phone', 'เบอร์โทร', 'หลายเบอร์คั่นด้วย ,')}${f('email', 'อีเมล')}${f('other_contact', 'Line / ช่องทางอื่น')}
+    <div class="field full"><label for="vf-note">หมายเหตุ</label><input id="vf-note" class="inp" value="${esc(v.note || '')}" ${ro ? 'readonly' : ''}></div>
+    ${vendorPicker(new Set(v.machines || []))}
+    ${isAdmin() ? '<div class="field full"><label><input type="checkbox" id="vfMain"> ตั้งเป็น <b>Vendor หลัก</b> ของเครื่องที่เลือก (อัปเดตช่อง Vendor / ผู้ติดต่อ / เบอร์ ในทะเบียนเครื่องให้ทุกเครื่องพร้อมกัน)</label></div>' : ''}
+    ${name ? `<div class="field"><span class="flabel">สถานะ</span><label><input type="checkbox" id="vf-active" ${v.active !== false ? 'checked' : ''} ${ro ? 'disabled' : ''}> ใช้งาน</label></div>` : ''}
+    <div class="full btns">${ro ? '<span class="sub">แก้ไขได้เฉพาะ Admin / Foreman Day</span>' : '<button class="btn" type="submit">บันทึก</button>'}<button class="btn ghost" type="button" data-close>ปิด</button></div></form>`, 'wide');
+  bindPicker();
+  if (ro) $$('#modal .vp-item input, #modal [data-vpg], #modal [data-vpclear]').forEach(x => x.disabled = true);
+  $('#fVendor').onsubmit = async e => {
+    e.preventDefault(); if (ro) return;
+    const g = k => ($('#vf-' + k)?.value || '').trim();
+    const row = { name: g('name'), work_type: g('work_type') || null, contact_person: g('contact_person') || null, phone: g('phone') || null, email: g('email') || null, other_contact: g('other_contact') || null, note: g('note') || null, machines: [...$$('#modal .vp-item input')].filter(b => b.checked).map(b => b.value) };
+    if (!row.name) return toast('ใส่ชื่อ Vendor');
+    if (name && $('#vf-active')) row.active = $('#vf-active').checked;
+    if (!name && D.vendors.some(x => x.name.toLowerCase() === row.name.toLowerCase())) return toast('มี Vendor ชื่อนี้แล้ว · เปิดจากรายชื่อเพื่อแก้ไข');
+    const r = name ? await sb.from('vendors').update(row).eq('name', name) : await sb.from('vendors').insert(row);
+    if (r.error) return fail(r.error);
+    if ($('#vfMain')?.checked && row.machines.length) {
+      for (const no of row.machines) { const u = await sb.from('machines').update({ supplier: row.name, contact_person: row.contact_person, phone: row.phone, email: row.email, other_contact: row.other_contact, updated_at: new Date().toISOString() }).eq('machine_no', no); if (u.error) return fail(u.error); }
+    }
+    closeModal(); toast('บันทึก Vendor แล้ว' + (row.machines.length ? ` · ${row.machines.length} เครื่อง` : '')); reload();
+  };
+}
+// เพิ่ม Vendor ให้เครื่อง: เลือกจากรายชื่อที่มี (Admin / FD) หรือสร้างใหม่
+function vendorLink(no) {
+  const avail = D.vendors.filter(v => v.active !== false && !(v.machines || []).includes(no));
+  if (!canVendorEdit() || !avail.length) return vendorForm(null, no);
+  modal(`<h2>เพิ่ม Vendor ให้ ${esc(no)}</h2><div class="form"><div class="field full"><label for="vlSel">เลือกจาก Vendor ที่มีอยู่</label><select id="vlSel" class="inp">${avail.map(v => `<option value="${esc(v.name)}">${esc(v.name)}${v.work_type ? ' · ' + esc(v.work_type) : ''} (${(v.machines || []).length} เครื่อง)</option>`).join('')}</select></div></div>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="vlGo">เพิ่มให้เครื่องนี้</button><button class="btn ghost" id="vlNew">สร้าง Vendor ใหม่</button><button class="btn ghost" data-close>ยกเลิก</button></div>`);
+  $('#vlNew').onclick = () => vendorForm(null, no);
+  $('#vlGo').onclick = async () => { const v = D.vendors.find(x => x.name === $('#vlSel').value); const { error } = await sb.from('vendors').update({ machines: [...new Set([...(v.machines || []), no])] }).eq('name', v.name); if (error) return fail(error); closeModal(); toast('เพิ่ม ' + v.name + ' ให้ ' + no + ' แล้ว'); reload(); };
+}
+
 // ---------- ปฏิทิน PM / CAL ----------
 const calToggle = () => `<div class="seg" role="group" aria-label="มุมมอง"><button class="${S.calView !== 'month' ? 'on' : ''}" data-calview="list">รายการ</button><button class="${S.calView === 'month' ? 'on' : ''}" data-calview="month">ปฏิทิน</button></div>`;
 // รายการในเดือน: รอบที่ครบกำหนด (ต่อจากรอบถัดไปตาม Interval) + งาน PM/CAL ที่ปิดแล้วในเดือนนั้น
@@ -1912,6 +2065,12 @@ function bind() {
   $$('[data-fkind]').forEach(b => b.onclick = () => { S.fkind = b.dataset.fkind; S.fsel = null; render(); });
   $$('[data-fnode]').forEach(b => b.onclick = () => { S.fsel = S.fsel === b.dataset.fnode ? null : b.dataset.fnode; render(); });
   $$('[data-fdays]').forEach(b => b.onclick = () => { S.fdays = +b.dataset.fdays; render(); });
+  $$('[data-mpview]').forEach(b => b.onclick = () => { const ps = mPhotos(S.scanNo); photoViewer(ps, Math.max(0, ps.findIndex(x => String(x.id) === b.dataset.mpview))); });
+  $$('[data-jpview]').forEach(b => b.onclick = () => photoViewer(jobPhotos(S.scanNo), +b.dataset.jpview));
+  $('#mpAdd') && ($('#mpAdd').onchange = e => addMachinePhotos(e.target.dataset.mp, e.target.files));
+  $$('[data-vlink]').forEach(b => b.onclick = () => vendorLink(b.dataset.vlink));
+  $$('[data-vedit]').forEach(a => a.onclick = e => { e.preventDefault(); vendorForm(a.dataset.vedit); });
+  $('#vAdd') && ($('#vAdd').onclick = () => vendorForm(null));
   $$('[data-calview]').forEach(b => b.onclick = () => { S.calView = b.dataset.calview; S.calDay = null; try { localStorage.setItem('capd-cal-view', S.calView); } catch (e) {} render(); });
   $$('[data-calmonth]').forEach(b => b.onclick = () => { S.calMonth = b.dataset.calmonth || null; S.calDay = null; render(); });
   $$('[data-calday]').forEach(b => b.onclick = () => { S.calDay = S.calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
@@ -1966,7 +2125,7 @@ function bind() {
   $$('[data-scanqr]').forEach(b => b.onclick = openScanner);
   $('#refresh').onclick = () => { reload(); toast('รีเฟรชข้อมูลแล้ว'); };
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
-  live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq');
+  live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq'); live('vq', 'vq');
   $$('#expReq').forEach(b => b.onclick = exportRequests);
   $('#mAdd') && ($('#mAdd').onclick = () => machineForm(null));
   $('#mImport') && ($('#mImport').onchange = e => { const f = e.target.files[0]; if (f) importExcel(f); e.target.value = ''; });
@@ -1975,7 +2134,7 @@ function bind() {
 
   const ms = $('#nMachine');
   if (ms) {
-    ms.onchange = () => { const m = M(ms.value); $('#mInfo').innerHTML = ms.value ? `<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div>${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span>${esc(m.parent_machine)} ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>` : ''; };
+    ms.onchange = () => { const m = M(ms.value); const mp0 = mPhotos(ms.value)[0]; $('#mInfo').innerHTML = ms.value ? `${mp0 ? `<div class="minfo-ph">${imgTag(mp0.path, 'รูปเครื่อง ' + ms.value)}</div>` : ''}<div class="mcard"><div><span>Model</span>${esc(m.model || '-')}</div><div><span>Serial</span>${esc(m.serial_number || '-')}</div><div><span>Location</span>${esc(m.location || '-')}</div><div><span>Priority</span>${esc(m.priority)}</div><div><span>Member ผู้รับผิดชอบ</span>${esc(nm(m.responsibility))}</div><div><span>Vendor</span>${esc(m.supplier || '-')}</div>${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span>${esc(m.parent_machine)} ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>` : ''; };
     if (S.prefill) { ms.onchange(); S.prefill = null; }
     const mq = $('#nMachineQ');
     if (mq) mq.oninput = () => { const k = mq.value.trim().toLowerCase(); let first = null, n = 0;
