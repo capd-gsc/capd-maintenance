@@ -71,7 +71,7 @@ try { if (PENDING_M) sessionStorage.setItem(SCAN_KEY, PENDING_M); else PENDING_M
 // ลิงก์จากอีเมล / Teams: ?job=MR-…  (จำไว้ระหว่างไป Login)
 let PENDING_J = new URLSearchParams(location.search).get('job');
 try { if (PENDING_J) sessionStorage.setItem(JOB_KEY, PENDING_J); else PENDING_J = sessionStorage.getItem(JOB_KEY); } catch (e) {}
-const S = { me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
+const S = { calView: (() => { try { return localStorage.getItem('capd-cal-view') || 'list'; } catch (e) { return 'list'; } })(), me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
 const D = { machines: [], requests: [], profiles: [], docs: [], parts: [], vendors: [], hasParts: false };
 
 /* ---------- helpers ---------- */
@@ -554,9 +554,10 @@ const VIEWS = {
   },
 
   cal() {
+    if (S.calView === 'month') return calMonth();
     const p = planList();
     const st = d => d < 0 ? `<span class="pill s-rej">เกินกำหนด ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน · ขั้น ${tierOf(d)}</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
-    return `<div class="h-row"><h1>แผน PM / CAL</h1><span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
+    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}</td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
@@ -570,17 +571,17 @@ const VIEWS = {
     if (S.pq) { const k = S.pq.toLowerCase(); rows = rows.filter(x => [x.part_no, x.name, x.spec, x.location, x.vendor, ...(x.machines || [])].join(' ').toLowerCase().includes(k)); }
     const value = D.parts.reduce((a, x) => a + Number(x.stock || 0) * Number(x.unit_price || 0), 0), low = lowParts();
     const openPR = D.requests.filter(q => q.job_type === 'purchase' && OPEN(q.status));
-    return `<div class="h-row"><h1>คลังอะไหล่</h1><span class="sub">${D.parts.length} รายการ · มูลค่าคงคลัง ${num2(value)} บาท</span>
+    return `<div class="h-row"><h1>คลังอะไหล่</h1><span class="sub">${D.parts.length} รายการ · มูลค่าคงคลัง ${num2(value)} บาท · กดที่รายการเพื่อดูประวัติ ปรับยอด หรือแก้ไข</span>
       ${canCreate() ? '<button class="btn" id="prNew">+ คำขอซื้อ</button><button class="btn ghost" id="ptIssue">เบิกอะไหล่</button>' : ''}${canParts() ? '<button class="btn ghost" id="ptAdd">+ เพิ่มอะไหล่</button>' : ''}</div>
     ${low.length ? `<div class="remind"><b>${IC.warn} ต่ำกว่า Min ${low.length} รายการ</b><div class="rrow">${low.slice(0, 6).map(x => `<span><b class="mono">${esc(x.part_no)}</b> ${esc(x.name)} · เหลือ ${qty(x.stock)}/${qty(x.min_qty)}</span>`).join(' · ')}</div>${canCreate() ? '<div><button class="btn sm" id="prLow">ขอซื้อรายการที่ต่ำกว่า Min</button></div>' : ''}</div>` : ''}
     ${openPR.length ? `<h3 class="sec">คำขอซื้อที่ยังไม่ปิด (${openPR.length})</h3>${taskTable(openPR)}<h3 class="sec">ทะเบียนอะไหล่</h3>` : ''}
     <div class="fbar">${[['all', 'ใช้งาน', D.parts.filter(x => x.active !== false).length], ['low', 'ต่ำกว่า Min', low.length], ['off', 'เลิกใช้', D.parts.filter(x => x.active === false).length]].map(([k, l, n]) => `<button class="chip ${(S.pfilter || 'all') === k ? 'on' : ''}" data-pfilter="${k}">${l} <span class="sub">${n}</span></button>`).join('')}
       <div class="sp"></div><label class="sr" for="pq">ค้นหาอะไหล่</label><input id="pq" class="search" placeholder="ค้นหา Part no / ชื่อ / เครื่อง / Rack" value="${esc(S.pq || '')}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Part no</th><th>ชื่อ / Spec</th><th class="num">คงเหลือ</th><th class="num">Min / Max</th><th>ที่เก็บ</th><th class="num">ราคา/หน่วย</th><th>ใช้กับเครื่อง</th><th></th></tr></thead><tbody>
-      ${rows.map(x => { const lo = x.min_qty != null && Number(x.stock) <= Number(x.min_qty); return `<tr><td class="mono"><b>${esc(x.part_no)}</b></td><td>${esc(x.name)}<br><span class="sub">${esc(x.spec || '')}${x.vendor ? ' · ' + esc(x.vendor) : ''}</span></td>
+      ${rows.map(x => { const lo = x.min_qty != null && Number(x.stock) <= Number(x.min_qty); return `<tr class="prow" data-pdetail="${esc(x.part_no)}"><td class="mono"><a href="#" class="folio">${esc(x.part_no)}</a></td><td>${esc(x.name)}<br><span class="sub">${esc(x.spec || '')}${x.vendor ? ' · ' + esc(x.vendor) : ''}</span></td>
       <td class="num"><span class="pill ${lo ? 's-rej' : 's-confirm'}">${qty(x.stock)} ${esc(x.unit)}</span></td><td class="num">${x.min_qty ?? '-'} / ${x.max_qty ?? '-'}</td><td>${esc(x.location || '-')}</td><td class="num">${x.unit_price != null ? num2(x.unit_price) : '-'}</td>
       <td>${(x.machines || []).map(no => `<a href="#" class="folio" data-scan="${esc(no)}">${esc(no)}</a>`).join(', ') || '-'}</td>
-      <td class="row-actions"><button class="btn ghost sm" data-phist="${esc(x.part_no)}">ประวัติ</button>${canParts() ? `<button class="btn ghost sm" data-padj="${esc(x.part_no)}">ปรับยอด</button><button class="btn ghost sm" data-pedit="${esc(x.part_no)}">แก้ไข</button>` : ''}${canCreate() ? `${Number(x.stock) > 0 ? `<button class="btn ghost sm" data-pissue="${esc(x.part_no)}">เบิก</button>` : ''}<button class="btn ghost sm" data-pbuy="${esc(x.part_no)}">ขอซื้อ</button>` : ''}</td></tr>`; }).join('')}
+      <td class="row-actions">${canCreate() ? (Number(x.stock) > 0 ? `<button class="btn ghost sm" data-pissue="${esc(x.part_no)}">เบิก</button>` : `<button class="btn ghost sm" data-pbuy="${esc(x.part_no)}">ขอซื้อ</button>`) : ''}</td></tr>`; }).join('')}
     </tbody></table></div>` : '<div class="empty">ไม่พบอะไหล่</div>'}`;
   },
 
@@ -1282,15 +1283,68 @@ function adjustForm(pn) {
     closeModal(); toast(`ปรับยอด ${pn} ${d > 0 ? '+' : ''}${qty(d)}`); reload();
   };
 }
-async function partHistory(pn) {
+// ---------- ปฏิทิน PM / CAL ----------
+const calToggle = () => `<div class="seg" role="group" aria-label="มุมมอง"><button class="${S.calView !== 'month' ? 'on' : ''}" data-calview="list">รายการ</button><button class="${S.calView === 'month' ? 'on' : ''}" data-calview="month">ปฏิทิน</button></div>`;
+// รายการในเดือน: รอบที่ครบกำหนด (ต่อจากรอบถัดไปตาม Interval) + งาน PM/CAL ที่ปิดแล้วในเดือนนั้น
+function calEvents(y, mo) {
+  const from = `${y}-${String(mo + 1).padStart(2, '0')}-01`, to = addMonths(from, 1);
+  const ev = [];
+  for (const x of planList()) {
+    let due = x.next, k = 0;
+    while (due < to && k < 60) { if (due >= from) ev.push({ date: due, kind: x.kind, m: x.m, job: k === 0 ? x.job : null, days: daysLeft(due), future: k > 0 }); due = addMonths(due, x.iv); k++; }
+  }
+  D.requests.filter(q => q.job_type === 'pmcal' && q.status === 'closed' && q.end_at).forEach(q => {
+    const d = new Date(q.end_at), ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    if (ds >= from && ds < to) ev.push({ date: ds, kind: q.pmcal_kind, m: M(q.machine_no), job: q, done: true });
+  });
+  return ev.sort((a, b) => a.date.localeCompare(b.date) || a.m.machine_no?.localeCompare(b.m.machine_no));
+}
+const evCls = e => e.done ? 'ev-done' : e.days < 0 ? 'ev-late' : e.days <= 30 ? 'ev-t3' : e.days <= 90 ? 'ev-soon' : 'ev-plan';
+const evText = e => e.done ? 'ทำแล้ว' : e.days < 0 ? `เกิน ${-e.days} วัน` : e.days === 0 ? 'วันนี้' : `อีก ${e.days} วัน`;
+function calMonth() {
+  const now = new Date(), cur = S.calMonth || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const [y, m] = cur.split('-').map(Number), mo = m - 1;
+  const ev = calEvents(y, mo), first = new Date(y, mo, 1).getDay(), ndays = new Date(y, mo + 1, 0).getDate();
+  const todayS = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const shift = n => { const d = new Date(y, mo + n, 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const cells = [];
+  for (let i = 0; i < first; i++) cells.push('<div class="cday out"></div>');
+  for (let d = 1; d <= ndays; d++) {
+    const ds = `${cur}-${String(d).padStart(2, '0')}`, es = ev.filter(e => e.date === ds);
+    cells.push(`<button class="cday ${ds === todayS ? 'today' : ''} ${S.calDay === ds ? 'sel' : ''} ${es.length ? 'has' : ''}" data-calday="${ds}" aria-label="${d} ${TH[mo]} ${es.length} รายการ"><span class="dn">${d}</span>
+      <span class="evs">${es.slice(0, 3).map(e => `<i class="ev ${evCls(e)}">${e.kind} ${esc(e.m.machine_no)}</i>`).join('')}${es.length > 3 ? `<i class="ev more">+${es.length - 3}</i>` : ''}</span>
+      <span class="dots">${es.slice(0, 4).map(e => `<i class="${evCls(e)}"></i>`).join('')}</span></button>`);
+  }
+  const pick = S.calDay && S.calDay.startsWith(cur) ? ev.filter(e => e.date === S.calDay) : ev;
+  const head = S.calDay && S.calDay.startsWith(cur) ? `วันที่ ${Number(S.calDay.slice(8))} ${TH[mo]} ${y + 543}` : `ทั้งเดือน ${TH[mo]} ${y + 543}`;
+  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}</div>
+    <div class="cal-nav"><button class="iconbtn ghosty" data-calmonth="${shift(-1)}" aria-label="เดือนก่อน">‹</button><b>${TH[mo]} ${y + 543}</b><button class="iconbtn ghosty" data-calmonth="${shift(1)}" aria-label="เดือนถัดไป">›</button><button class="btn ghost sm" data-calmonth="">เดือนนี้</button>
+      <span class="cal-leg"><i class="ev-late"></i>เกินกำหนด <i class="ev-t3"></i>≤ 30 วัน <i class="ev-soon"></i>≤ 90 วัน <i class="ev-plan"></i>ตามแผน <i class="ev-done"></i>ทำแล้ว</span></div>
+    <div class="cal" role="grid">${['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => `<div class="cdh">${d}</div>`).join('')}${cells.join('')}</div>
+    <h3 class="sec">${head} (${pick.length})</h3>
+    ${pick.length ? `<div class="cal-list">${pick.map(e => `<a href="#" class="cal-item ${evCls(e)}" ${e.job ? `data-open="${esc(e.job.id)}"` : `data-scan="${esc(e.m.machine_no)}"`}><span class="cd">${Number(e.date.slice(8))} ${TH[Number(e.date.slice(5, 7)) - 1]}</span><span class="ck">${e.kind}</span><span class="cm"><b class="mono">${esc(e.m.machine_no)}</b> ${esc(e.m.machine_name || '')}<br><span class="sub">${esc(nm(e.m.responsibility))}${e.job ? ' · ' + esc(e.job.id) : e.future ? ' · รอบถัดไป' : ''}</span></span><span class="cs">${evText(e)}</span></a>`).join('')}</div>` : '<div class="empty">ไม่มี PM / CAL ในช่วงนี้</div>'}`;
+}
+
+// รายละเอียดอะไหล่: ข้อมูล + ปุ่มทั้งหมด + ประวัติเข้าออก
+async function partDetail(pn) {
+  const x = PT(pn); if (!x.part_no) return;
   const { data, error } = await sb.from('part_tx').select('*').eq('part_no', pn).order('at', { ascending: false });
   if (error) return fail(error);
   const K = { opening: 'ยอดยกมา', receive: 'รับเข้า', issue: 'เบิกใช้', adjust: 'ปรับยอด' };
-  modal(`<h2>ความเคลื่อนไหว ${esc(pn)}</h2><p class="sub" style="margin-top:0">${esc(PT(pn).name || '')} · คงเหลือ ${qty(PT(pn).stock)} ${esc(PT(pn).unit || '')}</p>
-    ${(data || []).length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>ประเภท</th><th class="num">จำนวน</th><th>ใบงาน / เครื่อง</th><th>โดย / หมายเหตุ</th></tr></thead><tbody>${data.map(t => `<tr><td class="num">${fd(t.at)}</td><td>${K[t.kind] || t.kind}</td><td class="num ${t.qty < 0 ? 'u-Critical' : ''}">${t.qty > 0 ? '+' : ''}${qty(t.qty)}</td><td>${t.request_id ? `<a href="#" class="folio" data-open-close="${esc(t.request_id)}">${esc(t.request_id)}</a>` : ''}${t.machine_no ? `${t.request_id ? '<br>' : ''}<span class="mono sub">${esc(t.machine_no)}</span>` : ''}${t.request_id || t.machine_no ? '' : '-'}</td><td>${esc(nm(t.actor))}${t.note ? '<br><span class="sub">' + esc(t.note) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีความเคลื่อนไหว</div>'}
-    <div class="btns" style="margin-top:12px"><button class="btn ghost" data-close>ปิด</button></div>`);
+  const lo = x.min_qty != null && Number(x.stock) <= Number(x.min_qty);
+  const kv = (k, v) => `<div><span>${k}</span>${v}</div>`;
+  modal(`<div class="pd-head"><div><h2 style="margin:0">${esc(x.name)}</h2><span class="sub mono">${esc(pn)}${x.spec ? ' · ' + esc(x.spec) : ''}</span></div>
+      <div class="pd-stock ${lo ? 'low' : ''}"><b>${qty(x.stock)}</b><span>${esc(x.unit)} คงเหลือ${lo ? ' · ต่ำกว่า Min' : ''}</span></div></div>
+    <div class="mcard" style="margin:12px 0">${kv('Min / Max', `${x.min_qty ?? '-'} / ${x.max_qty ?? '-'}`)}${kv('ที่เก็บ', esc(x.location || '-'))}${kv('ราคา/หน่วย', x.unit_price != null ? num2(x.unit_price) + ' บาท' : '-')}${kv('Lead time', x.lead_days ? x.lead_days + ' วัน' : '-')}${kv('Vendor', esc(x.vendor || '-'))}${kv('ใช้กับเครื่อง', (x.machines || []).map(no => `<a href="#" class="folio" data-pd-scan="${esc(no)}">${esc(no)}</a>`).join(', ') || '-')}</div>
+    <div class="btns pd-acts">${canCreate() && Number(x.stock) > 0 ? '<button class="btn" data-pd="issue">เบิก</button>' : ''}${canCreate() ? '<button class="btn ghost" data-pd="buy">ขอซื้อ</button>' : ''}${canParts() ? '<button class="btn ghost" data-pd="adj">ปรับยอด (นับสต็อก)</button><button class="btn ghost" data-pd="edit">แก้ไขข้อมูล</button>' : ''}<button class="btn ghost" data-close>ปิด</button></div>
+    <h3 class="sec" style="margin-top:16px">ความเคลื่อนไหว (${(data || []).length})</h3>
+    ${(data || []).length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>ประเภท</th><th class="num">จำนวน</th><th>ใบงาน / เครื่อง</th><th>โดย / หมายเหตุ</th></tr></thead><tbody>${data.map(t => `<tr><td class="num">${fd(t.at)}</td><td>${K[t.kind] || t.kind}</td><td class="num ${t.qty < 0 ? 'u-Critical' : ''}">${t.qty > 0 ? '+' : ''}${qty(t.qty)}</td><td>${t.request_id ? `<a href="#" class="folio" data-open-close="${esc(t.request_id)}">${esc(t.request_id)}</a>` : ''}${t.machine_no ? `${t.request_id ? '<br>' : ''}<span class="mono sub">${esc(t.machine_no)}</span>` : ''}${t.request_id || t.machine_no ? '' : '-'}</td><td>${esc(nm(t.actor))}${t.note ? '<br><span class="sub">' + esc(t.note) + '</span>' : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีความเคลื่อนไหว</div>'}`, 'wide');
   $$('#modal [data-open-close]').forEach(a => a.onclick = e => { e.preventDefault(); closeModal(); openDetail(a.dataset.openClose); });
+  $$('#modal [data-pd-scan]').forEach(a => a.onclick = e => { e.preventDefault(); closeModal(); openScan(a.dataset.pdScan); });
+  const go = f => () => { closeModal(); f(); };
+  $$('#modal [data-pd]').forEach(b => b.onclick = go({ issue: () => issueForm(pn), buy: () => buyPart(pn), adj: () => adjustForm(pn), edit: () => partForm(pn) }[b.dataset.pd]));
 }
+const buyPart = pn => { const x = PT(pn); purchaseForm([{ part_no: x.part_no, name: x.name, unit: x.unit, qty: Math.max(1, Number(x.max_qty ?? x.min_qty ?? 1) - Number(x.stock)) }]); };
 
 // เบิกอะไหล่ใช้ทั่วไป / ใช้กับเครื่อง (ไม่มีใบงาน) · ต้องใส่เหตุผล
 function issueForm(pn, mno) {
@@ -1848,18 +1902,19 @@ function bind() {
   $('#ptAdd') && ($('#ptAdd').onclick = () => partForm(null));
   $('#prNew') && ($('#prNew').onclick = () => purchaseForm());
   $('#prLow') && ($('#prLow').onclick = () => purchaseForm(lowParts().slice(0, 5).map(x => ({ part_no: x.part_no, name: x.name, unit: x.unit, qty: Math.max(1, Number(x.max_qty ?? x.min_qty ?? 1) - Number(x.stock)) }))));
-  $$('[data-pedit]').forEach(b => b.onclick = () => partForm(b.dataset.pedit));
-  $$('[data-padj]').forEach(b => b.onclick = () => adjustForm(b.dataset.padj));
-  $$('[data-phist]').forEach(b => b.onclick = () => partHistory(b.dataset.phist));
+  $$('[data-pdetail]').forEach(b => b.onclick = e => { if (e.target.closest('[data-pissue],[data-pbuy]')) return; e.preventDefault(); e.stopPropagation(); partDetail(b.dataset.pdetail); });
   $('#ptIssue') && ($('#ptIssue').onclick = () => issueForm());
-  $$('[data-pissue]').forEach(b => b.onclick = () => issueForm(b.dataset.pissue));
+  $$('[data-pissue]').forEach(b => b.onclick = e => { e.stopPropagation(); issueForm(b.dataset.pissue); });
   $$('[data-missue]').forEach(b => b.onclick = () => issueForm(null, b.dataset.missue));
   $$('[data-muse]').forEach(b => b.onclick = () => machineUsage(b.dataset.muse));
-  $$('[data-pbuy]').forEach(b => b.onclick = () => { const x = PT(b.dataset.pbuy); purchaseForm([{ part_no: x.part_no, name: x.name, unit: x.unit, qty: Math.max(1, Number(x.max_qty ?? x.min_qty ?? 1) - Number(x.stock)) }]); });
+  $$('[data-pbuy]').forEach(b => b.onclick = e => { e.stopPropagation(); buyPart(b.dataset.pbuy); });
   $$('[data-pfilter]').forEach(b => b.onclick = () => { S.pfilter = b.dataset.pfilter; render(); });
   $$('[data-fkind]').forEach(b => b.onclick = () => { S.fkind = b.dataset.fkind; S.fsel = null; render(); });
   $$('[data-fnode]').forEach(b => b.onclick = () => { S.fsel = S.fsel === b.dataset.fnode ? null : b.dataset.fnode; render(); });
   $$('[data-fdays]').forEach(b => b.onclick = () => { S.fdays = +b.dataset.fdays; render(); });
+  $$('[data-calview]').forEach(b => b.onclick = () => { S.calView = b.dataset.calview; S.calDay = null; try { localStorage.setItem('capd-cal-view', S.calView); } catch (e) {} render(); });
+  $$('[data-calmonth]').forEach(b => b.onclick = () => { S.calMonth = b.dataset.calmonth || null; S.calDay = null; render(); });
+  $$('[data-calday]').forEach(b => b.onclick = () => { S.calDay = S.calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
   $('#qCancel') && ($('#qCancel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) cancelForm(q); });
   $('#backupBtn') && ($('#backupBtn').onclick = backupAll);
   $('#qDel') && ($('#qDel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) deleteForm(q); });
