@@ -607,7 +607,7 @@ const VIEWS = {
     let rows = D.vendors.slice();
     if (S.vq) { const k = S.vq.toLowerCase(); rows = rows.filter(v => [v.name, v.work_type, v.contact_person, v.phone, v.email, ...(v.machines || [])].join(' ').toLowerCase().includes(k)); }
     return `<div class="h-row"><button class="btn ghost" data-nav="machine">← เครื่องจักร</button><h1>Vendor</h1><span class="sub">${D.vendors.length} ราย · 1 ราย ผูกได้หลายเครื่อง กดชื่อเพื่อแก้ไข</span>${canCreate() ? '<button class="btn" id="vAdd">+ เพิ่ม Vendor</button>' : ''}</div>
-    <div class="fbar"><span class="sub">นำเข้าหลายรายพร้อมกันได้จากชีท Vendors ใน Excel (หน้าอะไหล่)</span><div class="sp"></div><label class="sr" for="vq">ค้นหา Vendor</label><input id="vq" class="search" placeholder="ค้นหา ชื่อ / เครื่อง / เบอร์" value="${esc(S.vq || '')}"></div>
+    <div class="fbar"><span class="sub">นำเข้าหลายรายพร้อมกันได้จากชีท Vendors ในไฟล์ Excel (เมนู เครื่องจักร → นำเข้าจาก Excel)</span><div class="sp"></div><label class="sr" for="vq">ค้นหา Vendor</label><input id="vq" class="search" placeholder="ค้นหา ชื่อ / เครื่อง / เบอร์" value="${esc(S.vq || '')}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Vendor</th><th>ประเภทงาน</th><th>ผู้ติดต่อ</th><th>ติดต่อ</th><th>ใช้กับเครื่อง</th></tr></thead><tbody>${rows.map(v => `<tr class="${v.active === false ? 'off' : ''}"><td><a href="#" class="folio" data-vedit="${esc(v.name)}">${esc(v.name)}</a></td><td>${esc(v.work_type || '-')}</td><td>${esc(v.contact_person || '-')}</td>
       <td>${v.phone ? String(v.phone).split(/[,/]/).map(p => `<a href="${esc(telHref(p.trim()))}">${esc(p.trim())}</a>`).join('<br>') : ''}${v.email ? `${v.phone ? '<br>' : ''}<a href="mailto:${esc(v.email)}">${esc(v.email)}</a>` : ''}${!v.phone && !v.email ? '-' : ''}</td>
       <td>${(v.machines || []).length ? `<span class="pill s-queue">${v.machines.length} เครื่อง</span> <span class="sub">${v.machines.slice(0, 4).map(esc).join(', ')}${v.machines.length > 4 ? ' …' : ''}</span>` : '<span class="sub">ยังไม่ได้เลือกเครื่อง</span>'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มี Vendor</div>'}`;
@@ -1844,14 +1844,16 @@ async function importExcel(file) {
     const list = v => String(v || '').split(/[,\s]+/).map(x => x.trim()).filter(Boolean);
     if (D.hasParts) {
       const vrows = (sheet('Vendors') || []).filter(r => g(r, 'vendor') && !/^ตัวอย่าง/.test(String(g(r, 'vendor')))).map(r => ({ name: String(g(r, 'vendor')).trim(), contact_person: g(r, 'contact person'), phone: g(r, 'เบอร์โทรศัพท์') && String(g(r, 'เบอร์โทรศัพท์')), email: g(r, 'e-mail'), other_contact: g(r, 'line/ช่องทางอื่น'), machines: list(g(r, 'machine number (คั่นด้วย ,)', 'machine number')), work_type: g(r, 'ประเภทงาน'), note: g(r, 'หมายเหตุ') }));
-      if (vrows.length) { const { error } = await sb.from('vendors').upsert(vrows); if (error) throw error; nv = vrows.length; }
+      // นำเข้าซ้ำได้: ช่องว่างในไฟล์ไม่ลบข้อมูลเดิม · รายการเครื่องรวมกับที่ผูกไว้แล้ว (เอาเครื่องออกทำในหน้า Vendor)
+      const merged = vrows.map(v => { const old = D.vendors.find(x => x.name === v.name); if (!old) return v; const keep = {}; Object.entries(v).forEach(([k, val]) => { if (val != null && val !== '' && k !== 'machines') keep[k] = val; }); return { ...old, ...keep, machines: [...new Set([...(old.machines || []), ...v.machines])] }; });
+      if (merged.length) { const { error } = await sb.from('vendors').upsert(merged); if (error) throw error; nv = merged.length; }
       const prows = (sheet('Spare Parts') || []).filter(r => g(r, 'part no') && !/^ตัวอย่าง/.test(String(g(r, 'part no'))));
       for (const r of prows) {
         const pn = String(g(r, 'part no')).trim(), want = Number(g(r, 'คงเหลือ (ยอดยกมา)', 'คงเหลือ') || 0), had = D.parts.find(x => x.part_no === pn);
         const row = { part_no: pn, name: String(g(r, 'ชื่ออะไหล่') || pn), spec: g(r, 'spec'), unit: g(r, 'หน่วย') || 'ชิ้น', min_qty: g(r, 'min') != null ? Number(g(r, 'min')) : null, max_qty: g(r, 'max') != null ? Number(g(r, 'max')) : null, location: g(r, 'ที่เก็บ (rack)', 'ที่เก็บ'), unit_price: g(r, 'ราคา/หน่วย (บาท)') != null ? Number(g(r, 'ราคา/หน่วย (บาท)')) : null, lead_days: g(r, 'lead time (วัน)') != null ? parseInt(g(r, 'lead time (วัน)')) : null, machines: list(g(r, 'machine number (คั่นด้วย ,)', 'machine number')), vendor: g(r, 'vendor') };
         const { error } = await sb.from('spare_parts').upsert(row); if (error) throw error;
-        const diff = want - Number(had?.stock || 0);
-        if (diff) { const r2 = await sb.from('part_tx').insert({ part_no: pn, qty: diff, kind: had ? 'adjust' : 'opening', note: 'นำเข้าจาก Excel' }); if (r2.error) throw r2.error; }
+        // ยอดยกมาใช้เฉพาะอะไหล่ใหม่ · อะไหล่ที่มีอยู่แล้วไม่เปลี่ยนยอด (นับสต็อกแล้วใช้ปุ่ม ปรับยอด ในเว็บ)
+        if (!had && want > 0) { const r2 = await sb.from('part_tx').insert({ part_no: pn, qty: want, kind: 'opening', note: 'ยอดยกมา (นำเข้าจาก Excel)' }); if (r2.error) throw r2.error; }
         np++;
       }
     }
