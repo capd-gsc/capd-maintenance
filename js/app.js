@@ -621,8 +621,8 @@ const VIEWS = {
     return `<div class="h-row"><h1>Flow งาน</h1><span class="sub">งานที่ยังไม่ปิด ${cnt('all')} ใบ · กดกล่องเพื่อดูรายการ${D.logsAll ? '' : ' · กำลังโหลดเวลาในแต่ละขั้น…'}</span></div>
     <div class="fbar">${kinds.map(([k, l]) => `<button class="chip ${(S.fkind || 'all') === k ? 'on' : ''}" data-fkind="${k}">${l} <span class="sub">${cnt(k)}</span></button>`).join('')}</div>
     ${b.html}
-    <div class="note" style="margin-bottom:14px">สีเขียว = มีงานอยู่ในขั้นนี้ · สีส้ม = มีงานอยู่ในขั้นนี้นานเกิน 3 วัน (คอขวด) · ตัวเลข = จำนวนใบงานตอนนี้</div>
-    ${b.pick ? `<h3 class="sec">${esc(b.pickLabel)} (${b.pick.length})</h3>${taskTable(b.pick.slice().sort((x, y) => stageAge(y) - stageAge(x)), 'ไม่มีใบงานในขั้นนี้')}` : ''}`;
+    <div class="note" style="margin-bottom:14px">สีเขียว = มีงานอยู่ในขั้นนี้ · สีส้ม = มีงานค้าง (อยู่ในขั้นเดิมเกิน 3 วัน · PM/CAL เหลือ ≤ 30 วันแล้วยังไม่เริ่ม) · ตัวเลข = จำนวนใบงานตอนนี้</div>
+    ${b.pick ? `<h3 class="sec">${esc(b.pickLabel)} (${b.pick.length})</h3>${taskTable(b.pick.slice().sort((x, y) => isStuck(y) - isStuck(x) || stageAge(y) - stageAge(x)), 'ไม่มีใบงานในขั้นนี้')}` : ''}`;
   },
 
   report() {
@@ -798,14 +798,16 @@ const FLANES = {
   pmcal: [['quote', 'PM / CAL', ['quote', 'memo', 'po']]],
   purchase: [['quote', 'คำขอซื้อ', ['quote', 'memo', 'po']]]
 };
+// งานค้าง: อยู่ในขั้นเดิมเกิน 3 วัน · ใบงาน PM/CAL ที่ระบบเปิดล่วงหน้า 90 วัน นับว่าค้างเมื่อเหลือ ≤ 30 วันแล้วยังไม่เริ่ม
+const isStuck = q => q.job_type === 'pmcal' && q.status === 'quotation' && q.due_date ? (!q.action_at && daysLeft(q.due_date) <= 30) : stageAge(q) > 3 * 864e5;
 function flowNode(key, label, jobs, sub) {
-  const stale = jobs.filter(q => stageAge(q) > 3 * 864e5).length, hold = jobs.filter(q => q.hold_reason).length, down = jobs.filter(q => q.machine_down).length;
+  const stale = jobs.filter(isStuck).length, hold = jobs.filter(q => q.hold_reason).length, down = jobs.filter(q => q.machine_down).length;
   const avg = jobs.length ? jobs.reduce((a, q) => a + stageAge(q), 0) / jobs.length : 0;
   const cls = !jobs.length ? 'empty' : stale ? 'warn' : 'ok';
   return `<button class="fnode ${cls} ${S.fsel === key ? 'sel' : ''}" data-fnode="${key}" aria-pressed="${S.fsel === key}">
     <span class="fl">${label}</span><b class="fc">${jobs.length}</b>
     <span class="fs">${sub || (jobs.length ? 'อยู่ในขั้นนี้เฉลี่ย ' + durText(avg) : 'ไม่มีงานค้าง')}</span>
-    ${stale || hold || down ? `<span class="ftags">${stale ? `<i class="t-warn">ค้าง &gt; 3 วัน ${stale}</i>` : ''}${hold ? `<i class="t-hold">พัก ${hold}</i>` : ''}${down ? `<i class="t-bad">เครื่องหยุด ${down}</i>` : ''}</span>` : ''}</button>`;
+    ${stale || hold || down ? `<span class="ftags">${stale ? `<i class="ft-warn">ค้าง ${stale}</i>` : ''}${hold ? `<i class="ft-hold">พัก ${hold}</i>` : ''}${down ? `<i class="ft-bad">เครื่องหยุด ${down}</i>` : ''}</span>` : ''}</button>`;
 }
 function flowBoard() {
   const kind = S.fkind || 'all';
@@ -885,7 +887,7 @@ function stageStatsHtml() {
   const s = stageStats(days), mx = Math.max(1, ...s.rows.map(r => r.avg)), slow = s.rows.reduce((a, r) => !a || r.avg > a.avg ? r : a, null);
   return `<div class="box fstats"><div class="jflow-h"><h3>เวลาเฉลี่ยแต่ละขั้น</h3><div class="chips">${[30, 90, 365].map(d => `<button class="chip ${days === d ? 'on' : ''}" data-fdays="${d}">${d === 365 ? '1 ปี' : d + ' วัน'}</button>`).join('')}</div></div>
     <p class="sub" style="margin-top:0">จากใบงานที่ปิดแล้ว ${s.jobs} ใบ (ไม่รวมงานแก้ไขเอง) · เปิด → ปิดเฉลี่ย <b>${s.jobs ? durText(s.lead) : '-'}</b></p>
-    ${s.rows.length ? `<div class="bars">${s.rows.map(r => `<div class="bar ${r === slow && s.rows.length > 1 ? 'slow' : ''}"><span>${esc(r.label)}${r === slow && s.rows.length > 1 ? ' <b class="t-warn">ช้าที่สุด</b>' : ''}</span><div class="tr"><div class="fl" style="width:${r.avg / mx * 100}%"></div></div><span class="v">${durText(r.avg)} <span class="sub">(${r.n} ใบ)</span></span></div>`).join('')}</div>` : '<div class="empty">ยังไม่มีงานที่ปิดในช่วงนี้</div>'}</div>`;
+    ${s.rows.length ? `<div class="bars">${s.rows.map(r => `<div class="bar ${r === slow && s.rows.length > 1 ? 'slow' : ''}"><span>${esc(r.label)}${r === slow && s.rows.length > 1 ? ' <b class="ft-warn">ช้าที่สุด</b>' : ''}</span><div class="tr"><div class="fl" style="width:${r.avg / mx * 100}%"></div></div><span class="v">${durText(r.avg)} <span class="sub">(${r.n} ใบ)</span></span></div>`).join('')}</div>` : '<div class="empty">ยังไม่มีงานที่ปิดในช่วงนี้</div>'}</div>`;
 }
 
 function memoChain(q) {
