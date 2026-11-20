@@ -122,7 +122,7 @@ ok(dp.length > 0 && dp.every(x => x.chat_to.length === 1 && x.subject.includes('
 
 // ---------- D. link from email opens the job after login ----------
 const { chromium } = require('playwright');
-const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 900 } }); const perr = []; p.on('pageerror', e => perr.push(e.message));
+const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1280, height: 900 } }); require('../lib/reveal.js')(p); const perr = []; p.on('pageerror', e => perr.push(e.message));
 await p.route('http://bridge.local/q', async r => { const res = await q(JSON.parse(r.request().postData())); r.fulfill({ body: JSON.stringify(res), contentType: 'application/json' }); });
 await p.route('**/supabase.js', r => r.fulfill({ body: fs.readFileSync(env.client, 'utf8'), contentType: 'application/javascript' }));
 await p.route('**/xlsx.full.min.js', r => r.fulfill({ body: '', contentType: 'application/javascript' }));

@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');const X=require('xlsx');
 (async()=>{const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
 const row=async(s,a)=>(await db.query(s,a)).rows;
-const b=await chromium.launch();const ctx=await b.newContext({viewport:{width:1280,height:900},acceptDownloads:true});const p=await ctx.newPage();const errs=[];p.on('pageerror',e=>errs.push(e.message));
+const b=await chromium.launch();const ctx=await b.newContext({viewport:{width:1280,height:900},acceptDownloads:true});const p=await ctx.newPage();require('../lib/reveal.js')(p);const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.clock.install();
 await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
 await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));

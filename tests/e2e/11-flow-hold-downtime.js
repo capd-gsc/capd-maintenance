@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');
 (async()=>{const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
 const row=async(s,a)=>(await db.query(s,a)).rows;
-const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});require('../lib/reveal.js')(p);const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
 await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));
 await p.route('**/xlsx.full.min.js',r=>r.fulfill({body:'',contentType:'application/javascript'}));
@@ -28,8 +28,8 @@ ok(a.machine_down===true&&a.down_since&&Math.abs(new Date(a.down_since)-twoH)<12
 ok((await p.textContent('#main')).includes('หยุดใช้งาน'),'detail shows the machine is stopped');
 // FD approves Normal → wait_admin; admin pauses (รออะไหล่)
 await as(U(3));await open(A);await p.click('input[name=apType][value=RMT]');await p.click('[data-act=fd_approve]');await W(800);
-await as(U(1));await open(A);ok(await p.locator('details.holdq').count()===1,'admin sees the pause box');
-await p.click('details.holdq summary');await p.selectOption('#hdReason','รออะไหล่');await p.fill('#hdNote','สั่ง Load cell แล้ว');await p.click('[data-act=hold_on]');await W(800);
+await as(U(1));await open(A);ok(await p.locator('#qHold').count()===1,'admin sees พักงาน in the ⋯ menu');
+await p.click('#qHold');await W(200);await p.selectOption('#hdReason','รออะไหล่');await p.fill('#hdNote','สั่ง Load cell แล้ว');await p.click('#hdGo');await W(800);
 a=await J(A);ok(a.hold_reason==='รออะไหล่'&&a.hold_note==='สั่ง Load cell แล้ว'&&a.hold_since&&a.status==='wait_admin','job paused, status unchanged, pause time set by the database');
 ok((await p.textContent('.h-row')).includes('พัก: รออะไหล่'),'paused badge in the job header');
 await p.click('.side-nav [data-nav="list"]');await W(300);ok((await p.textContent('[data-filter="hold"]')).includes('1'),'list has a พักงาน filter with 1 job');

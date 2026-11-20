@@ -2,7 +2,7 @@
 const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');
 (async()=>{const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
 const row=async(s,a)=>(await db.query(s,a)).rows;
-const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});require('../lib/reveal.js')(p);const errs=[];p.on('pageerror',e=>errs.push(e.message));
 await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
 await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));
 await p.route('**/xlsx.full.min.js',r=>r.fulfill({body:'',contentType:'application/javascript'}));

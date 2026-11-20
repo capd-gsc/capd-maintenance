@@ -3,7 +3,7 @@ const {chromium}=require('playwright');const fs=require('fs');const {Client}=req
 (async()=>{
 const q=await require('../lib/bridge.js')();const db=new Client(require('../lib/env.js').pg);await db.connect();
 const row=async(sql,a)=>(await db.query(sql,a)).rows;
-const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});const errs=[];p.on('pageerror',e=>errs.push(e.message));
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});require('../lib/reveal.js')(p);const errs=[];p.on('pageerror',e=>errs.push(e.message));
 p.on('console',m=>{if(m.type()==='error')errs.push('console: '+m.text())});
 await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json',headers:{'access-control-allow-origin':'*'}})});
 await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(require('../lib/env.js').client,'utf8'),contentType:'application/javascript'}));
@@ -78,7 +78,7 @@ const ms=await row("select count(*)::int n, count(*) filter (where machine_type=
 ok(ms[0].n>3,'template import added machines');ok((await row("select count(*)::int n from machines where machine_no like 'ตัวอย่าง%'"))[0].n===0,'example row skipped');
 ok(ms[0].noeng===0,'every machine has Eng,Foreman');
 // dashboard
-await p.click('.side-nav [data-nav="machine"]');await W(200);await p.click('[data-scan="M-01"]');await W(400);ok((await p.textContent('#main')).includes('Dashboard 12 เดือนล่าสุด'),'machine dashboard renders');
+await p.click('.side-nav [data-nav="machine"]');await W(200);await p.click('[data-scan="M-01"]');await W(400);ok((await p.textContent('#main')).includes('ภาพรวม 12 เดือน'),'machine dashboard renders');
 await p.screenshot({path:'dash.png',fullPage:true});
 // anon blocked at DB
 const an=await q({op:'select',t:'requests',f:[],order:[],email:''});ok(!!an.error||(Array.isArray(an.data)&&an.data.length===0),'anon reads nothing');
