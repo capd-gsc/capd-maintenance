@@ -31,18 +31,18 @@ await as('user05@scg.com');ok((await p.textContent('.who')).includes('Foreman Sh
 const A=await create('M-01','มอเตอร์ไม่หมุน');const B=await create('T-01','ค่าแรงดึงเพี้ยน');console.log('   created',A,B);
 // FD routing
 await as('user02@scg.com');await p.click('.side-nav [data-nav="home"]');await W(200);
-ok(await p.locator(`[data-open="${A}"]`).count()===1,'FD เครื่องจักร sees M-01 job in My Tasks');
-ok(await p.locator(`[data-open="${B}"]`).count()===0,'FD เครื่องจักร does not get T-01 (เครื่องทดสอบ) job');
+ok(await p.locator(`[data-pane="home:mine"] [data-open="${A}"]`).count()===1,'FD เครื่องจักร sees M-01 job in My Tasks');
+ok(await p.locator(`[data-pane="home:mine"] [data-open="${B}"]`).count()===0,'FD เครื่องจักร does not get T-01 (เครื่องทดสอบ) job');
 await open(B);ok(await p.locator('[data-act=fd_approve]').count()===0,'FD เครื่องจักร has no approve button on T-01');
 await open(A);await p.click('input[name=apType][value=RMT]');await p.click('[data-act=fd_approve]');await W(500);ok(await st()==='รอ Admin แจ้งซ่อม','A approved → wait_admin');
 let a=await J(A);ok(a.approved_by==='user02@scg.com','approved_by set by DB');
 await as('user01@scg.com');ok((await p.textContent('.who')).includes('Member + Admin'),'member+admin flag shown');
-await p.click('.side-nav [data-nav="home"]');await W(200);ok(await p.locator(`[data-open="${A}"]`).count()===1,'Admin flag user gets wait_admin task');
+await p.click('.side-nav [data-nav="home"]');await W(200);ok(await p.locator(`[data-pane="home:mine"] [data-open="${A}"]`).count()===1,'Admin flag user gets wait_admin task');
 await open(A);await p.fill('#exRef','SAP-100234');await p.click('[data-act=admin_report]');await W(500);ok(await st()==='RMT/FM กำลังซ่อม','A → ext_repair');
 await as('user02@scg.com');await open(A);await p.fill('#exFix','เปลี่ยน contactor');await p.fill('#exCost','3500');await p.click('[data-act=close_ext]');await W(500);
 a=await J(A);ok(a.status==='closed'&&a.closed_by==='user02@scg.com'&&+a.cost_thb===3500,'A closed by FD, cost saved');
 // Special on T-01
-await as('user03@scg.com');await p.click('.side-nav [data-nav="home"]');await W(200);ok(await p.locator(`[data-open="${B}"]`).count()===1,'FD เครื่องทดสอบ sees T-01 job');
+await as('user03@scg.com');await p.click('.side-nav [data-nav="home"]');await W(200);ok(await p.locator(`[data-pane="home:mine"] [data-open="${B}"]`).count()===1,'FD เครื่องทดสอบ sees T-01 job');
 await open(B);await p.click('input[name=apType][value=special]');await p.selectOption('#apAssignee','user21@scg.com');await p.click('[data-act=fd_approve]');await W(500);ok(await st()==='ขอใบเสนอราคา / MEMO','B → quotation');
 await as('user21@scg.com');await open(B);await p.fill('#qV0','ABC Testing');await p.fill('#qA0','45000');await p.fill('#mfMemoNo','MEMO-26-011');
 await p.setInputFiles('#qF0','quote.pdf');await p.selectOption('#mfApp0','user09@scg.com');await p.selectOption('#mfApp1','user10@scg.com');await p.click('[data-act=memo_submit]');await W(600);ok(await st()==='รอ Manager อนุมัติ MEMO','B → memo_approval');
@@ -62,7 +62,7 @@ await as('user01@scg.com');await open(P1);await p.fill('#poNo','PO-PM-1');await 
 await as('user14@scg.com');await open(P1);await p.fill('#pvFix','PM ตามแผน');await p.click('[data-act=close_special]');await W(500);
 const m1=(await row("select pm_last_date::text d from machines where machine_no='M-01'"))[0].d;ok(m1===new Date().toISOString().slice(0,10),'closing PM job updated pm_last_date via trigger: '+m1);
 // manager can't create
-await as('user09@scg.com');await p.click('.side-nav [data-nav="new"]');await W(200);ok((await p.textContent('#main')).includes('ไม่ได้เปิดใบงาน'),'manager cannot open jobs');
+await as('user09@scg.com');ok(await p.locator('.side-nav [data-nav="new"]').count()===0,'manager has no แจ้งซ่อม button');await p.evaluate(()=>{});
 // admin page
 await as('user01@scg.com');await p.click('.side-nav [data-nav="admin"]');await W(300);ok(await p.locator('#main tbody tr').count()===21,'admin sees 21 users');
 await p.screenshot({path:'admin.png',fullPage:false});

@@ -67,6 +67,7 @@ async function resetDb(mode) {
       else {
         const file = ['.js', '.mjs'].map(x => path.join(__dirname, 'e2e', s.name + x)).find(f => fs.existsSync(f));
         const r = spawnSync(process.execPath, [file], { cwd: OUT, env: { ...process.env, NODE_PATH }, encoding: 'utf8', timeout: 300e3 });
+        if (process.env.VERBOSE) console.log((r.stdout || '').split('\n').filter(l => !l.startsWith('PASS')).join('\n'), (r.stderr || '').slice(0, 1500));
         const lines = (r.stdout || '').split('\n');
         pass = lines.filter(l => l.startsWith('PASS')).length;
         fail = lines.filter(l => l.startsWith('FAIL'));

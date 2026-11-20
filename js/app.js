@@ -71,7 +71,7 @@ try { if (PENDING_M) sessionStorage.setItem(SCAN_KEY, PENDING_M); else PENDING_M
 // ลิงก์จากอีเมล / Teams: ?job=MR-…  (จำไว้ระหว่างไป Login)
 let PENDING_J = new URLSearchParams(location.search).get('job');
 try { if (PENDING_J) sessionStorage.setItem(JOB_KEY, PENDING_J); else PENDING_J = sessionStorage.getItem(JOB_KEY); } catch (e) {}
-const S = { calView: (() => { try { return localStorage.getItem('capd-cal-view') || 'list'; } catch (e) { return 'list'; } })(), me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
+const S = { listView: (() => { try { return localStorage.getItem('capd-list-view') || 'list'; } catch (e) { return 'list'; } })(), calView: (() => { try { return localStorage.getItem('capd-cal-view') || 'list'; } catch (e) { return 'list'; } })(), me: null, view: 'home', sel: null, scanNo: null, prefill: null, filter: 'open', q: '', mq: '', docQ: '', docKind: 'all', photos: [], logs: [], att: [] };
 const D = { machines: [], requests: [], profiles: [], docs: [], parts: [], vendors: [], hasParts: false };
 
 /* ---------- helpers ---------- */
@@ -314,14 +314,21 @@ async function enter(session) {
 
 /* =================== SHELL =================== */
 const NAV_ICON = { home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
+// เมนู: งานประจำวันบน ข้อมูลอ้างอิงล่าง · "แจ้งซ่อม" เป็นปุ่ม · อนุมัติรวมในหน้าหลัก · Flow รวมในใบงาน
+function navGroups() {
+  return [
+    ['งาน', [['home', 'หน้าหลัก', myTasks().length], ['list', 'ใบงาน'], ['cal', 'PM / CAL', myReminders().length]]],
+    ['เครื่องและอะไหล่', [['machine', 'เครื่องจักร'], ['parts', 'อะไหล่', canParts() ? lowParts().length : 0]]],
+    ['ข้อมูล', [['docs', 'คลังเอกสาร'], ['report', 'รายงาน']]]
+  ];
+}
 function navItems() {
-  const nApprove = D.requests.filter(q => (q.status === 'pending_fd' && isMine(q)) || (q.status === 'memo_approval' && q.memo_approvers[q.memo_step] === S.me.email)).length;
-  const nav = [['home', 'หน้าหลัก', myTasks().length], ['new', 'แจ้งซ่อม'], ['list', 'ใบงาน'], ['approve', 'อนุมัติ', nApprove], ['flow', 'Flow งาน'], ['machine', 'เครื่องจักร'], ['parts', 'อะไหล่', canParts() ? lowParts().length : 0], ['cal', 'PM / CAL', myReminders().length], ['docs', 'คลังเอกสาร'], ['report', 'รายงาน']];
-  if (isAdmin()) nav.push(['admin', 'ผู้ใช้']);
+  const nav = navGroups().flatMap(g => g[1]);
+  if (isAdmin()) nav.push(['admin', 'ผู้ใช้และสิทธิ์']);
   return nav;
 }
 const CRUMBS = { vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
-const navOn = k => S.view === k || (S.view === 'detail' && k === 'list') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
+const navOn = k => S.view === k || (['detail', 'flow'].includes(S.view) && k === 'list') || (S.view === 'approve' && k === 'home') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
   dirty = false; lastSync = Date.now();
@@ -332,7 +339,8 @@ function render() {
   <div class="shell">
     <aside class="side" aria-label="เมนูหลัก">
       <div class="brand">${LOGO}<span>CAPD <b>Maintenance</b><small>${esc(C.ORG)}</small></span></div>
-      <nav class="side-nav">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</nav>
+      <nav class="side-nav">${canCreate() ? `<button data-nav="new" class="side-cta ${navOn('new') ? 'on' : ''}">${IC.plus}<span>แจ้งซ่อม</span></button>` : ''}${navGroups().map(([g, items]) => `<p class="side-g">${g}</p>${items.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}`).join('')}</nav>
+      ${isAdmin() ? `<nav class="side-nav side-admin"><button data-nav="admin" class="${navOn('admin') ? 'on' : ''}">${IC.admin}<span>ผู้ใช้และสิทธิ์</span></button></nav>` : ''}
       <div class="side-foot">${TRIAL_USER ? '<span class="demo-flag" title="เข้าด้วยอีเมลอย่างเดียว ยังไม่ใช่ Login จริง">โหมดทดลอง</span>' : ''}<span class="sub">${esc(C.APP_NAME)} · ${esc(C.ORG)}${window.APP_VERSION ? " · v" + esc(window.APP_VERSION) : ""}</span></div>
     </aside>
     <div class="content">
@@ -361,7 +369,8 @@ function render() {
 function moreSheet() {
   const nav = navItems().filter(([k]) => !['home', 'new', 'list'].includes(k));
   modal(`<div class="sheet-head">${avatar(S.me.email)}<div><b>${esc(S.me.full_name || S.me.email)}</b><div class="sub">${esc(roleText(S.me))}</div></div></div>
-    <div class="sheet-grid">${nav.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>
+    ${navGroups().map(([g, items]) => { const it = items.filter(([k]) => !['home', 'list'].includes(k)); return it.length ? `<p class="side-g">${g}</p><div class="sheet-grid">${it.map(([k, l, b]) => `<button data-nav="${k}" class="${navOn(k) ? 'on' : ''}">${IC[NAV_ICON[k]]}<span>${l}</span>${b ? `<i class="badge">${b}</i>` : ''}</button>`).join('')}</div>` : ''; }).join('')}
+    ${isAdmin() ? `<p class="side-g">ตั้งค่า</p><div class="sheet-grid"><button data-nav="admin" class="${navOn('admin') ? 'on' : ''}">${IC.admin}<span>ผู้ใช้และสิทธิ์</span></button></div>` : ''}
     <div class="btns" style="margin-top:14px"><button class="btn ghost" id="logout2">${IC.out} ออกจากระบบ</button><button class="btn ghost" data-close>ปิด</button></div>`, 'sheet');
   $$('#modal [data-nav]').forEach(b => b.onclick = () => { closeModal(); S.view = b.dataset.nav; render(); window.scrollTo(0, 0); });
   $('#logout2').onclick = async () => { closeModal(); await logout(); S.view = 'home'; renderLogin(); };
@@ -445,8 +454,9 @@ const VIEWS = {
     </div>
     ${rem.length ? `<div class="remind"><b>${IC.cal} PM / CAL ที่ต้องเริ่มดำเนินการ</b>${rem.map(q => { const d = daysLeft(q.due_date); return `<div class="rrow" data-open="${esc(q.id)}"><span class="tier t${tierOf(d)}">ขั้น ${tierOf(d)}</span><span><b>${esc(q.machine_no)}</b> ${esc(q.pmcal_kind)} ครบกำหนด ${fd(q.due_date)} · ${d < 0 ? 'เกิน ' + (-d) : 'อีก ' + d} วัน</span><span class="sub">${esc(nm(q.assignee))}</span></div>`; }).join('')}</div>` : ''}
     <div class="home-grid">
-      <section class="stack"><div class="sec-h"><h2>งานของฉัน (${t.length})</h2><span class="sp"></span>${canCreate() ? `<button class="btn" data-nav="new">${IC.plus} แจ้งซ่อม</button>` : ''}</div>
-        ${taskTable(t, 'ไม่มีงานค้างสำหรับคุณ', true)}</section>
+      <section class="stack">${canCreate() ? `<div class="sec-h"><span class="sp"></span><button class="btn hide-desk" data-nav="new">${IC.plus} แจ้งซ่อม</button></div>` : ''}
+        ${(() => { const fdRows = D.requests.filter(q => q.status === 'pending_fd').sort((a, b) => canFD(b.machine_no) - canFD(a.machine_no)), memoRows = D.requests.filter(q => q.status === 'memo_approval' && (isAdmin() || q.memo_approvers[q.memo_step] === S.me.email)); const showAll = isAdmin() || is('foreman_day', 'manager'); return tabs('home', [['mine', 'งานของฉัน', taskTable(t, 'ไม่มีงานค้างสำหรับคุณ', true), t.length], showAll ? ['appr', 'รออนุมัติทั้งหมด', `<h3 class="sec" style="margin-top:4px">ใบแจ้งซ่อมรอ Foreman Day อนุมัติ (${fdRows.length})</h3>${taskTable(fdRows, 'ไม่มีใบงานรออนุมัติ', true)}<h3 class="sec">MEMO รอ${isAdmin() ? ' Manager' : 'คุณ'}อนุมัติ (${memoRows.length})</h3>${taskTable(memoRows, 'ไม่มี MEMO รออนุมัติ', true)}`, fdRows.length + memoRows.length] : null]); })()}
+      </section>
       <section class="box"><h3>งานเข้า / ปิด รายสัปดาห์</h3>${weekChart()}</section>
     </div>`;
   },
@@ -456,7 +466,8 @@ const VIEWS = {
     if (S.filter === 'open') rows = rows.filter(q => OPEN(q.status)); else if (S.filter === 'hold') rows = rows.filter(q => OPEN(q.status) && q.hold_reason); else if (S.filter === 'down') rows = rows.filter(q => OPEN(q.status) && q.machine_down); else if (S.filter !== 'all') rows = rows.filter(q => q.status === S.filter);
     if (S.q) { const k = S.q.toLowerCase(); rows = rows.filter(q => [q.id, q.machine_no, M(q.machine_no).machine_name, q.symptom, q.reporter, q.assignee, q.external_ref, q.memo_no, q.po_no, jobType(q)].join(' ').toLowerCase().includes(k)); }
     const chips = [['open', 'ยังเปิด', D.requests.filter(q => OPEN(q.status)).length], ['all', 'ทั้งหมด', D.requests.length], ['down', 'เครื่องหยุด', D.requests.filter(q => OPEN(q.status) && q.machine_down).length], ['hold', 'พักงาน', D.requests.filter(q => OPEN(q.status) && q.hold_reason).length], ...STATUS_ORDER.map(s => [s, SL[s], D.requests.filter(q => q.status === s).length])].filter(x => x[2] || ['open', 'all'].includes(x[0]));
-    return `<div class="h-row"><h1>ใบงานทั้งหมด</h1><span class="sub">${rows.length} รายการ</span><button class="btn ghost" id="expReq">Export Excel</button></div>
+    if (S.listView === 'flow') return VIEWS.flow();
+    return `<div class="h-row"><h1>ใบงานทั้งหมด</h1><span class="sub">${rows.length} รายการ</span>${listToggle()}${moreMenu(['<button class="mi" id="expReq">Export Excel</button>'])}</div>
     <div class="fbar">${chips.map(([k, l, n]) => `<button class="chip ${S.filter === k ? 'on' : ''}" data-filter="${k}">${l} <span class="sub">${n}</span></button>`).join('')}
     <div class="sp"></div><label class="sr" for="q">ค้นหา</label><input id="q" class="search" placeholder="ค้นหา เลขที่ / เครื่อง / SAP / MEMO / PO" value="${esc(S.q)}"></div>
     ${taskTable(rows)}`;
@@ -633,7 +644,7 @@ const VIEWS = {
     const kinds = [['all', 'ทั้งหมด'], ['repair', 'งานซ่อม'], ['pmcal', 'PM / CAL'], ['purchase', 'คำขอซื้อ']];
     const cnt = k => D.requests.filter(q => OPEN(q.status) && (k === 'all' || flowKind(q) === k)).length;
     const b = flowBoard();
-    return `<div class="h-row"><h1>Flow งาน</h1><span class="sub">งานที่ยังไม่ปิด ${cnt('all')} ใบ · กดกล่องเพื่อดูรายการ${D.logsAll ? '' : ' · กำลังโหลดเวลาในแต่ละขั้น…'}</span></div>
+    return `<div class="h-row"><h1>ใบงาน · Flow</h1>${listToggle()}<span class="sub">งานที่ยังไม่ปิด ${cnt('all')} ใบ · กดกล่องเพื่อดูรายการ${D.logsAll ? '' : ' · กำลังโหลดเวลาในแต่ละขั้น…'}</span></div>
     <div class="fbar">${kinds.map(([k, l]) => `<button class="chip ${(S.fkind || 'all') === k ? 'on' : ''}" data-fkind="${k}">${l} <span class="sub">${cnt(k)}</span></button>`).join('')}</div>
     ${b.html}
     <div class="note" style="margin-bottom:14px">สีเขียว = มีงานอยู่ในขั้นนี้ · สีส้ม = มีงานค้าง (อยู่ในขั้นเดิมเกิน 3 วัน · PM/CAL เหลือ ≤ 30 วันแล้วยังไม่เริ่ม) · ตัวเลข = จำนวนใบงานตอนนี้</div>
@@ -1501,6 +1512,7 @@ function vendorLink(no) {
 }
 
 // ---------- ปฏิทิน PM / CAL ----------
+const listToggle = () => `<div class="seg" role="group" aria-label="มุมมองใบงาน"><button class="${S.listView !== 'flow' ? 'on' : ''}" data-listview="list">รายการ</button><button class="${S.listView === 'flow' ? 'on' : ''}" data-listview="flow">Flow</button></div>`;
 const calToggle = () => `<div class="seg" role="group" aria-label="มุมมอง"><button class="${S.calView !== 'month' ? 'on' : ''}" data-calview="list">รายการ</button><button class="${S.calView === 'month' ? 'on' : ''}" data-calview="month">ปฏิทิน</button></div>`;
 // รายการในเดือน: รอบที่ครบกำหนด (ต่อจากรอบถัดไปตาม Interval) + งาน PM/CAL ที่ปิดแล้วในเดือนนั้น
 function calEvents(y, mo) {
@@ -2141,6 +2153,7 @@ function bind() {
   $$('[data-vlink]').forEach(b => b.onclick = () => vendorLink(b.dataset.vlink));
   $$('[data-vedit]').forEach(a => a.onclick = e => { e.preventDefault(); vendorForm(a.dataset.vedit); });
   $('#vAdd') && ($('#vAdd').onclick = () => vendorForm(null));
+  $$('[data-listview]').forEach(b => b.onclick = () => { S.listView = b.dataset.listview; if (S.view === 'flow') S.view = 'list'; try { localStorage.setItem('capd-list-view', S.listView); } catch (e) {} render(); });
   $$('[data-calview]').forEach(b => b.onclick = () => { S.calView = b.dataset.calview; S.calDay = null; try { localStorage.setItem('capd-cal-view', S.calView); } catch (e) {} render(); });
   $$('[data-calmonth]').forEach(b => b.onclick = () => { S.calMonth = b.dataset.calmonth || null; S.calDay = null; render(); });
   $$('[data-calday]').forEach(b => b.onclick = () => { S.calDay = S.calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
