@@ -444,7 +444,8 @@ const VIEWS = {
   home() {
     const t = myTasks(), open = D.requests.filter(q => OPEN(q.status)), rem = myReminders();
     const crit = open.filter(q => q.urgency === 'Critical').length, soon = rem.filter(q => daysLeft(q.due_date) <= 30).length;
-    const tile = (ic, tone, n, label, nav) => `<button class="tile ${tone}" ${nav ? `data-nav="${nav}"` : ''}><span class="ti">${ic}</span><b>${n}</b><span>${label}</span></button>`;
+    const tile = (ic, tone, n, label, nav) => `<button class="tile ${tone}" ${nav ? `data-nav="${nav}"` : ''}><span class="ti">${ic}</span><b data-count="${n}">${n}</b><span>${label}</span></button>`;
+    const pl = planList(), onTime = pl.filter(x => x.days >= 0).length;
     return `<div class="hello"><h1>สวัสดี, ${esc(String(S.me.full_name || S.me.email).split(' ')[0])}</h1><span class="sub">${esc(roleText(S.me))}${t.length ? ` · มี ${t.length} งานรอคุณ` : ' · ไม่มีงานค้าง'}</span></div>
     <div class="tiles">
       ${tile(IC.approve, 't-info', t.length, 'งานรอฉัน', '')}
@@ -457,7 +458,11 @@ const VIEWS = {
       <section class="stack">${canCreate() ? `<div class="sec-h"><span class="sp"></span><button class="btn hide-desk" data-nav="new">${IC.plus} แจ้งซ่อม</button></div>` : ''}
         ${(() => { const fdRows = D.requests.filter(q => q.status === 'pending_fd').sort((a, b) => canFD(b.machine_no) - canFD(a.machine_no)), memoRows = D.requests.filter(q => q.status === 'memo_approval' && (isAdmin() || q.memo_approvers[q.memo_step] === S.me.email)); const showAll = isAdmin() || is('foreman_day', 'manager'); return tabs('home', [['mine', 'งานของฉัน', taskTable(t, 'ไม่มีงานค้างสำหรับคุณ', true), t.length], showAll ? ['appr', 'รออนุมัติทั้งหมด', `<h3 class="sec" style="margin-top:4px">ใบแจ้งซ่อมรอ Foreman Day อนุมัติ (${fdRows.length})</h3>${taskTable(fdRows, 'ไม่มีใบงานรออนุมัติ', true)}<h3 class="sec">MEMO รอ${isAdmin() ? ' Manager' : 'คุณ'}อนุมัติ (${memoRows.length})</h3>${taskTable(memoRows, 'ไม่มี MEMO รออนุมัติ', true)}`, fdRows.length + memoRows.length] : null]); })()}
       </section>
-      <section class="box"><h3>งานเข้า / ปิด รายสัปดาห์</h3>${weekChart()}</section>
+      <div class="stack">
+        ${nextUpCard()}
+        ${pl.length ? `<section class="box dial-box"><h3>PM / CAL ไม่เกินกำหนด</h3>${dial(onTime, pl.length, 'ตรงเวลา', `${onTime} จาก ${pl.length} แผน · เกินกำหนด ${pl.length - onTime}`)}</section>` : ''}
+        <section class="box"><h3>งานเข้า / ปิด รายสัปดาห์</h3>${weekChart()}</section>
+      </div>
     </div>`;
   },
 
@@ -580,6 +585,7 @@ const VIEWS = {
 
   cal() {
     if (S.calView === 'month') return calMonth();
+    if (S.calView === 'week') return calWeek();
     const p = planList();
     const st = d => d < 0 ? `<span class="pill s-rej">เกินกำหนด ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน · ขั้น ${tierOf(d)}</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
     return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
@@ -667,7 +673,7 @@ const VIEWS = {
       <div class="tile"><b>${mttr.toFixed(1)}</b><span>MTTR (ชม./งาน)</span></div>
       <div class="tile"><b>${dt.toLocaleString()}</b><span>Downtime (นาที)</span></div>
       <div class="tile"><b>${cost.toLocaleString()}</b><span>ค่าซ่อม (บาท)</span></div>
-      <div class="tile"><b>${onTime}%</b><span>PM/CAL ไม่เกินกำหนด</span></div>
+      <div class="tile"><b data-count="${onTime}" data-suffix="%">${onTime}%</b><span>PM/CAL ไม่เกินกำหนด</span></div>
     </div>
     <div class="grid2">
       <div class="box"><h3>จำนวนใบงานตามประเภท</h3>${bars(byType, 'ใบ', k => esc(k))}</div>
@@ -1511,9 +1517,76 @@ function vendorLink(no) {
   $('#vlGo').onclick = async () => { const v = D.vendors.find(x => x.name === $('#vlSel').value); const { error } = await sb.from('vendors').update({ machines: [...new Set([...(v.machines || []), no])] }).eq('name', v.name); if (error) return fail(error); closeModal(); toast('เพิ่ม ' + v.name + ' ให้ ' + no + ' แล้ว'); reload(); };
 }
 
+/* ---------- Dashboard: ถัดไป · หน้าปัด · ตัวเลขนับขึ้น · ปฏิทินรายสัปดาห์ ---------- */
+const reduceMotion = () => { try { return matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } };
+const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+// รายการที่ใกล้ถึง: PM/CAL ใน 60 วัน (หรือเกินแล้ว) + วันนัด Vendor ของใบงานที่ยังเปิด · เรียงตามวัน
+function nextUp() {
+  const t0 = todayIso(), items = [];
+  planList().filter(x => x.days <= 60).forEach(x => items.push({ date: x.next, days: x.days, kind: x.kind, title: `${x.kind} ${x.m.machine_no}`, sub: x.m.machine_name || '', who: x.m.responsibility, open: x.job?.id, scan: x.m.machine_no }));
+  D.requests.filter(q => OPEN(q.status) && q.vendor_date && q.vendor_date >= t0).forEach(q => items.push({ date: q.vendor_date, days: daysLeft(q.vendor_date), kind: 'นัด', title: `นัด Vendor ${q.machine_no || ''}`.trim(), sub: q.vendor || q.symptom || '', who: q.assignee, open: q.id }));
+  return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6);
+}
+function nextUpCard() {
+  const it = nextUp();
+  const when = x => x.days < 0 ? `เกิน ${-x.days} วัน` : x.days === 0 ? 'วันนี้' : x.days === 1 ? 'พรุ่งนี้' : `อีก ${x.days} วัน`;
+  return `<section class="nextup"><h3>ถัดไป</h3>${it.length ? it.map(x => `<a href="#" class="nu-row ${x.days < 0 ? 'late' : x.days <= 30 ? 'soon' : ''}" ${x.open ? `data-open="${esc(x.open)}"` : `data-scan="${esc(x.scan)}"`}>
+      <span class="nu-d"><b>${Number(x.date.slice(8))} ${TH[Number(x.date.slice(5, 7)) - 1]}</b><small>${when(x)}</small></span>
+      <span class="nu-t"><b>${esc(x.title)}</b><small>${esc(x.sub)}${x.who ? ' · ' + esc(nm(x.who)) : ''}</small></span></a>`).join('') : '<p class="nu-empty">ไม่มีงานใน 60 วันข้างหน้า</p>'}
+    <button class="nu-more" data-nav="cal">ดูปฏิทิน PM / CAL</button></section>`;
+}
+// หน้าปัด: ขีดรอบ 300 องศา เว้นช่องด้านล่าง · ขีดสว่างไล่ขึ้นถึงค่าจริง
+function dial(value, max, label, sub) {
+  const size = 200, R = size / 2, r1 = R - 8, r0 = R - 24, ticks = 48;
+  const lines = Array.from({ length: ticks }, (_, i) => { const a = (-240 + (i / (ticks - 1)) * 300) * Math.PI / 180; return `<line x1="${(R + Math.cos(a) * r0).toFixed(1)}" y1="${(R + Math.sin(a) * r0).toFixed(1)}" x2="${(R + Math.cos(a) * r1).toFixed(1)}" y2="${(R + Math.sin(a) * r1).toFixed(1)}"/>`; }).join('');
+  const v = max ? Math.max(0, Math.min(max, value)) : 0;
+  return `<div class="dial" data-dial="${v}" data-max="${max}" data-ticks="${ticks}">
+    <svg viewBox="0 0 ${size} ${size}" role="img" aria-label="${esc(label)} ${max ? Math.round(v / max * 100) : 0}%">${lines}</svg>
+    <div class="dial-c"><b data-count="${max ? Math.round(v / max * 100) : 0}" data-suffix="%">${max ? Math.round(v / max * 100) : 0}%</b><span>${esc(label)}</span></div>
+    ${sub ? `<p class="dial-s">${esc(sub)}</p>` : ''}</div>`;
+}
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+// เล่นภาพเคลื่อนไหวเฉพาะตอนเข้าหน้า (ไม่เล่นซ้ำตอนรีเฟรชข้อมูลอัตโนมัติ)
+function playDash() {
+  const go = S.lastView !== S.view; S.lastView = S.view;
+  $$('.dial').forEach(d => {
+    const lines = [...d.querySelectorAll('line')], target = Math.round(Number(d.dataset.dial) / (Number(d.dataset.max) || 1) * lines.length);
+    const paint = k => lines.forEach((l, i) => l.classList.toggle('on', i < k));
+    if (!go || reduceMotion()) return paint(target);
+    paint(0); const t0 = performance.now(), dur = 1600;
+    const step = now => { const t = Math.min(1, (now - t0) / dur); paint(Math.round(easeOut(t) * target)); if (t < 1 && document.body.contains(d)) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+  $$('[data-count]').forEach(el => {
+    const end = Number(el.dataset.count), suf = el.dataset.suffix || '';
+    if (!go || reduceMotion() || !end) { el.textContent = end + suf; return; }
+    const t0 = performance.now(), dur = 1100;
+    const step = now => { const t = Math.min(1, (now - t0) / dur); el.textContent = Math.round(easeOut(t) * end) + suf; if (t < 1 && document.body.contains(el)) requestAnimationFrame(step); };
+    el.textContent = '0' + suf; requestAnimationFrame(step);
+  });
+}
+// ปฏิทินรายสัปดาห์ (จันทร์–อาทิตย์) · วันละคอลัมน์
+function calWeek() {
+  const base = S.calWeek ? new Date(S.calWeek + 'T00:00:00') : new Date(); base.setHours(0, 0, 0, 0);
+  const mon = new Date(base); mon.setDate(base.getDate() - ((base.getDay() + 6) % 7));
+  const days = Array.from({ length: 7 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const months = [...new Set(days.map(d => d.getFullYear() * 12 + d.getMonth()))];
+  const ev = months.flatMap(k => calEvents(Math.floor(k / 12), k % 12));
+  const shift = n => { const d = new Date(mon); d.setDate(mon.getDate() + n * 7); return iso(d); };
+  const t0 = todayIso(), last = days[6];
+  const range = `${days[0].getDate()} ${TH[days[0].getMonth()]} – ${last.getDate()} ${TH[last.getMonth()]} ${last.getFullYear() + 543}`;
+  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}</div>
+    <div class="cal-nav"><button class="iconbtn ghosty" data-calweek="${shift(-1)}" aria-label="สัปดาห์ก่อน">‹</button><b>${range}</b><button class="iconbtn ghosty" data-calweek="${shift(1)}" aria-label="สัปดาห์ถัดไป">›</button><button class="btn ghost sm" data-calweek="">สัปดาห์นี้</button>
+      <span class="cal-leg"><i class="ev-late"></i>เกินกำหนด <i class="ev-t3"></i>≤ 30 วัน <i class="ev-soon"></i>≤ 90 วัน <i class="ev-plan"></i>ตามแผน <i class="ev-done"></i>ทำแล้ว</span></div>
+    <div class="wk">${days.map((d, i) => { const ds = iso(d), es = ev.filter(e => e.date === ds); return `<div class="wk-col ${ds === t0 ? 'today' : ''}">
+      <div class="wk-h"><span>${['จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.', 'อา.'][i]}</span><b>${d.getDate()}</b></div>
+      <div class="wk-b">${es.map(e => `<a href="#" class="wk-ev ${evCls(e)}" ${e.job ? `data-open="${esc(e.job.id)}"` : `data-scan="${esc(e.m.machine_no)}"`}><b>${e.kind} ${esc(e.m.machine_no)}</b><small>${esc(e.m.machine_name || '')}</small><small>${evText(e)}</small></a>`).join('') || '<span class="wk-none">—</span>'}</div></div>`; }).join('')}</div>`;
+}
+
 // ---------- ปฏิทิน PM / CAL ----------
 const listToggle = () => `<div class="seg" role="group" aria-label="มุมมองใบงาน"><button class="${S.listView !== 'flow' ? 'on' : ''}" data-listview="list">รายการ</button><button class="${S.listView === 'flow' ? 'on' : ''}" data-listview="flow">Flow</button></div>`;
-const calToggle = () => `<div class="seg" role="group" aria-label="มุมมอง"><button class="${S.calView !== 'month' ? 'on' : ''}" data-calview="list">รายการ</button><button class="${S.calView === 'month' ? 'on' : ''}" data-calview="month">ปฏิทิน</button></div>`;
+const calToggle = () => `<div class="seg" role="group" aria-label="มุมมอง"><button class="${S.calView !== 'month' ? 'on' : ''}" data-calview="list">รายการ</button><button class="${S.calView === 'week' ? 'on' : ''}" data-calview="week">สัปดาห์</button><button class="${S.calView === 'month' ? 'on' : ''}" data-calview="month">เดือน</button></div>`;
 // รายการในเดือน: รอบที่ครบกำหนด (ต่อจากรอบถัดไปตาม Interval) + งาน PM/CAL ที่ปิดแล้วในเดือนนั้น
 function calEvents(y, mo) {
   const from = `${y}-${String(mo + 1).padStart(2, '0')}-01`, to = addMonths(from, 1);
@@ -2127,7 +2200,7 @@ function bind() {
   $$('[data-memo]').forEach(b => b.onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) openMemo(q); });
   $('#qHold') && ($('#qHold').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) holdForm(q); });
   $$('details.more .mi').forEach(b => b.addEventListener('click', () => b.closest('details').open = false));
-  bindTabs(); buildActbar();
+  bindTabs(); buildActbar(); playDash();
   document.body.classList.toggle('view-detail', ['detail', 'scan'].includes(S.view));
   $('#memoPrev') && ($('#memoPrev').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) previewMemo(q); });
   $$('input[name=mdM]').forEach(r => r.onchange = () => { $('#mdSp').hidden = document.querySelector('input[name=mdM]:checked').value !== 'special'; });
@@ -2155,6 +2228,7 @@ function bind() {
   $('#vAdd') && ($('#vAdd').onclick = () => vendorForm(null));
   $$('[data-listview]').forEach(b => b.onclick = () => { S.listView = b.dataset.listview; if (S.view === 'flow') S.view = 'list'; try { localStorage.setItem('capd-list-view', S.listView); } catch (e) {} render(); });
   $$('[data-calview]').forEach(b => b.onclick = () => { S.calView = b.dataset.calview; S.calDay = null; try { localStorage.setItem('capd-cal-view', S.calView); } catch (e) {} render(); });
+  $$('[data-calweek]').forEach(b => b.onclick = () => { S.calWeek = b.dataset.calweek || null; render(); });
   $$('[data-calmonth]').forEach(b => b.onclick = () => { S.calMonth = b.dataset.calmonth || null; S.calDay = null; render(); });
   $$('[data-calday]').forEach(b => b.onclick = () => { S.calDay = S.calDay === b.dataset.calday ? null : b.dataset.calday; render(); });
   $('#qCancel') && ($('#qCancel').onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) cancelForm(q); });
