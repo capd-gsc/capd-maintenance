@@ -11,6 +11,10 @@ create table if not exists public.app_users (
   created_at     timestamptz not null default now()
 );
 
+-- ชื่อย่อในไฟล์ Excel เดิม (เช่น MM, OH, Nutt) ใช้จับคู่ตอนนำเข้า · หน้าเว็บแสดง full_name
+alter table public.app_users add column if not exists short_name text;
+create unique index if not exists app_users_short_name_uniq on public.app_users (upper(btrim(short_name))) where short_name is not null and btrim(short_name) <> '';
+
 -- รายชื่อผู้ใช้ไม่เก็บใน GitHub (repo เป็น Public)
 -- ติดตั้งใหม่: รันไฟล์ users_seed.local.sql ที่ Admin เก็บไว้ หรือเพิ่ม Admin คนแรกด้วยคำสั่งนี้ แล้วนำเข้าผู้ใช้จาก Excel ในหน้าเว็บ
 --   insert into public.app_users(email, full_name, role, is_admin) values ('ชื่อ@scg.com', 'ชื่อ นามสกุล', 'member', true);
