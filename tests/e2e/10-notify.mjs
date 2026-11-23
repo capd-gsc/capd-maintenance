@@ -128,10 +128,11 @@ await p.route('**/supabase.js', r => r.fulfill({ body: fs.readFileSync(env.clien
 await p.route('**/xlsx.full.min.js', r => r.fulfill({ body: '', contentType: 'application/javascript' }));
 await p.route('**/qrcode.js', r => r.fulfill({ body: fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'), 'utf8'), contentType: 'application/javascript' }));
 await p.route('**fonts.googleapis.com/**', r => r.fulfill({ body: '', contentType: 'text/css' }));
-await p.goto(env.url + '?job=' + encodeURIComponent(A)); await p.waitForTimeout(500);
-await p.fill('#trEmail', U(5)); await p.click('#fTrial button'); await p.waitForTimeout(1200);
+const w = require('../lib/wait.js')(p);
+await p.goto(env.url + '?job=' + encodeURIComponent(A)); await p.waitForSelector('#app > .login', { state: 'attached' });
+await p.fill('#trEmail', U(5)); await w.login(() => p.click('#fTrial button'));
 ok((await p.textContent('.h-row h1')).trim() === A, 'email link ?job= opens that job right after login');
-await p.goto(env.url); await p.waitForTimeout(900); ok((await p.textContent('.hello h1')).includes('สวัสดี'), 'next visit opens the home page (link used once)');
+await w.login(() => p.goto(env.url)); ok((await p.textContent('.hello h1')).includes('สวัสดี'), 'next visit opens the home page (link used once)');
 // purchase requests (no machine)
 { const pj = { id: 'MR-2026-0999', machine_no: null, status: 'po_vendor', job_type: 'purchase', po_no: 'PO-9', symptom: 'ขอซื้อ: Bearing × 4', urgency: 'Normal' };
   ok(core.headline({ event: 'status', status: 'po_vendor', recipients: [], actor: U(1) }, pj).includes('รับของเข้าคลัง'), 'purchase headline: PO issued → receive into stock');

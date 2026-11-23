@@ -182,12 +182,14 @@ async function loadAll() {
 async function reload() {
   try {
     await loadAll();
-    if (S.me) { const u = D.profiles.find(x => x.email === S.me.email && x.active !== false); if (!u) { await logout(); return renderLogin('สิทธิ์ใช้งานของคุณถูกนำออกแล้ว'); } S.me = u; }
+    if (!S.me) return;   // ออกจากระบบระหว่างโหลด: หน้า Login แสดงอยู่แล้ว
+    { const u = D.profiles.find(x => x.email === S.me.email && x.active !== false); if (!u) { await logout(); return renderLogin('สิทธิ์ใช้งานของคุณถูกนำออกแล้ว'); } S.me = u; }
     if (S.view === 'detail') return openDetail(S.sel, false);
     render();
   } catch (e) { fail(e); }
 }
-const addLog = (id, action) => sb.from('request_logs').insert({ request_id: id, action, actor: S.me.email });
+// ออกจากระบบระหว่างทำงาน (await ค้างอยู่) → ไม่บันทึก แทนที่จะพังที่ S.me.email (ฐานข้อมูลก็ไม่รับ actor ที่ไม่ได้ Login)
+const addLog = (id, action) => S.me ? sb.from('request_logs').insert({ request_id: id, action, actor: S.me.email }) : Promise.resolve({ data: null, error: null });
 
 // งานของฉัน = เฉพาะใบงานที่รอให้ฉันดำเนินการ (Admin ดูทั้งหมดได้ที่หน้าใบงาน)
 function myTasks() { return D.requests.filter(q => OPEN(q.status) && isMine(q)); }
@@ -222,7 +224,7 @@ function shrink(file) {
   });
 }
 async function uploadFiles(prefix, kind, files) {
-  const out = [];
+  const out = [], by = S.me?.email || null;
   for (const [i, f] of [...(files || [])].entries()) {
     const isImg = /^image\//.test(f.type);
     const body = isImg ? (await shrink(f)) || f : f;
@@ -230,7 +232,7 @@ async function uploadFiles(prefix, kind, files) {
     const path = `${prefix}/${kind}-${Date.now()}-${i}-${name.replace(/[^\w.\-]+/g, '_')}`;
     const { error } = await sb.storage.from('request-photos').upload(path, body, { contentType: isImg ? 'image/jpeg' : (f.type || 'application/octet-stream') });
     if (error) throw error;
-    out.push({ kind, name, path, by: S.me.email, at: new Date().toISOString() });
+    out.push({ kind, name, path, by, at: new Date().toISOString() });
   }
   return out;
 }
@@ -1790,11 +1792,13 @@ async function act(a) {
   const { error } = await sb.from('requests').update(patch).eq('id', q.id);
   if (error) { $$('[data-act]').forEach(b => b.disabled = false); return fail(error); }
   await addLog(q.id, log);
+  if (S.me?.email !== me) return;   // ออกจากระบบ / เปลี่ยนผู้ใช้ระหว่างบันทึก
   toast(msg);
   await loadAll(); openDetail(q.id, false);
 }
 
 async function openDetail(id, scroll = true) {
+  if (!S.me) return;
   S.sel = id; S.view = 'detail';
   const q = D.requests.find(x => x.id === id);
   if (!q) { render(); return; }
@@ -1804,7 +1808,7 @@ async function openDetail(id, scroll = true) {
     sb.from('request_logs').select('*').eq('request_id', id).order('at'),
     files.length ? sb.storage.from('request-photos').createSignedUrls(files.map(f => f.path), 3600) : Promise.resolve({ data: [] })
   ]);
-  if (S.sel !== id || S.view !== 'detail') return;
+  if (!S.me || S.sel !== id || S.view !== 'detail') return;
   S.logs = logs || []; S.att = files.map((f, i) => ({ ...f, url: signed.data?.[i]?.signedUrl })).filter(f => f.url);
   render();
 }
@@ -2571,11 +2575,12 @@ function bind() {
       const self = document.querySelector('input[name=nMode]:checked').value === 'self';
       let closed = null; if (self) { closed = readClose('sf'); if (!closed) return; }
       $('#bSubmit').disabled = true;
+      const me = S.me.email;
       try {
         const folder = crypto.randomUUID();
         const attachments = [...await uploadFiles(folder, 'photo', filesOf('nPhoto')), ...(self ? await uploadFiles(folder, 'close', filesOf('sfFiles')) : [])];
         const down = $('#nDown').checked, downAt = down && $('#nDownAt').value ? new Date($('#nDownAt').value).toISOString() : null;
-        const row = { machine_no: ms.value, reporter: S.me.email, symptom: sym, machine_down: down, down_since: downAt, first_fix: $('#nFirst').value.trim() || null, urgency: document.querySelector('input[name=nUrg]:checked').value, attachments };
+        const row = { machine_no: ms.value, reporter: me, symptom: sym, machine_down: down, down_since: downAt, first_fix: $('#nFirst').value.trim() || null, urgency: document.querySelector('input[name=nUrg]:checked').value, attachments };
         const issues = closed?._issue || []; if (closed) delete closed._issue;
         Object.assign(row, self ? { ...closed, job_type: 'self_fix' } : { status: 'pending_fd' });
         const { data, error } = await sb.from('requests').insert(row).select().single();
@@ -2601,7 +2606,7 @@ async function autoSync(force = false) {
   lastSync = Date.now();
   const y = window.scrollY;
   try { await loadAll(); } catch (e) { return; }
-  if ($('#modal') || dirty) return;
+  if (!S.me || $('#modal') || dirty) return;
   if (S.view === 'detail') await openDetail(S.sel, false); else render();
   window.scrollTo(0, y);
 }
@@ -2610,7 +2615,7 @@ document.addEventListener('click', e => $$('details.more[open]').forEach(d => { 
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - lastSync > 15e3) autoSync(true); });
 function subscribe() {
   if (!channel) channel = sb.channel('requests').on('postgres_changes', { event: '*', schema: 'public', table: 'requests' }, () => {
-    loadAll().then(() => { if (!$('#modal') && !document.activeElement?.matches('input,textarea,select') && S.view !== 'detail') render(); });
+    loadAll().then(() => { if (S.me && !$('#modal') && !document.activeElement?.matches('input,textarea,select') && S.view !== 'detail') render(); });
   }).subscribe();
 }
 async function boot() {

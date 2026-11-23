@@ -3,7 +3,9 @@
 const KEY='mock-session';
 const sess=()=>{try{return JSON.parse(localStorage.getItem(KEY))}catch(e){return null}};
 const subs=[];
-let HDR={};const call=async body=>{const s=sess();const r=await fetch('http://bridge.local/q',{method:'POST',body:JSON.stringify({...body,email:s?.user?.email||'',headers:HDR})});return r.json();};
+// window.__busy = DB calls still running (tests/lib/wait.js waits for it to reach 0 instead of sleeping)
+window.__busy=0;
+let HDR={};const call=async body=>{const s=sess();window.__busy++;try{const r=await fetch('http://bridge.local/q',{method:'POST',body:JSON.stringify({...body,email:s?.user?.email||'',headers:HDR})});return await r.json();}finally{window.__busy--}};
 function Q(t){this.b={t,op:'select',f:[],order:[]};}
 Q.prototype.select=function(){if(this.b.op!=='select')this.b.ret=true;return this};
 Q.prototype.order=function(k,o){this.b.order.push([k,!o||o.ascending!==false]);return this};
