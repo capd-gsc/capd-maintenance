@@ -2210,22 +2210,28 @@ async function exportForm() {
     [['แบบฟอร์มกรอกวันที่ PM / CAL · ' + C.APP_NAME, { bold: true, size: 14 }], ['สร้างเมื่อ ' + dmy(todayIso()) + ' · ' + rows.length + ' แผน · ยังไม่มีวันที่ ' + rows.filter(r => !r.last).length + ' แผน (ช่องสีเหลือง)', { color: { argb: 'FF555555' } }], ['', {}],
       ['1. ไปที่ชีท “' + FORM_SHEET + '” แล้วกดลูกศรที่หัวคอลัมน์ “ผู้รับผิดชอบ” เลือกชื่อตัวเอง', {}],
       ['2. กรอกคอลัมน์สีเขียว “วันที่ทำล่าสุด (กรอก)” เป็นวัน/เดือน/ปี ค.ศ. เช่น 15/03/2026 · ดูจาก Certificate CAL, รายงาน PM หรือ Tag ที่เครื่อง', {}],
+      ['   Location: กดช่องแล้วกดลูกศรเลือกจากรายการ (เครื่องที่มี PM และ CAL ใส่แถวเดียวก็พอ) · ช่องสีเหลือง = ยังไม่มีข้อมูล', {}],
       ['3. ถ้ารอบไม่ถูก แก้คอลัมน์ “รอบ (เดือน)” ได้ · มีอะไรเพิ่มเติมเขียนในคอลัมน์ “หมายเหตุ”', {}],
       ['4. ไม่รู้วันที่ ปล่อยว่างไว้ · ห้ามเพิ่ม ลบ หรือสลับคอลัมน์ · แก้ได้เฉพาะคอลัมน์สีเขียว', {}],
       ['5. บันทึกไฟล์แล้วส่งกลับให้ Admin · Admin นำเข้าที่หน้า PM / CAL → ⋯ → นำเข้า Excel (ส่งไฟล์แยกคนละไฟล์ได้ นำเข้าทีละไฟล์)', {}]].forEach(([t, f], i) => { const c = hw.getCell(i + 1, 1); c.value = t; c.font = f; c.alignment = { wrapText: true }; });
     const ws = wb.addWorksheet(FORM_SHEET, { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const lists = wb.addWorksheet('ตัวเลือก', { state: 'hidden' }); lists.getCell(1, 1).value = 'Location'; OPT.loc.forEach((l, i) => lists.getCell(i + 2, 1).value = l);
+    const locRef = `'ตัวเลือก'!$A$2:$A$${OPT.loc.length + 1}`;
     const cols = [['Machine number', 16], ['ชื่อเครื่อง', 36], ['Location', 20], ['งาน', 7], ['รอบ (เดือน)', 10], ['วันที่ทำล่าสุด (ในระบบ)', 14], ['วันที่ทำล่าสุด (กรอก)', 16], ['ครบกำหนดถัดไป', 14], ['ผู้รับผิดชอบ', 22], ['Vendor', 22], ['หมายเหตุ', 30]];
-    cols.forEach(([h, w], i) => { ws.getColumn(i + 1).width = w; const c = ws.getCell(1, i + 1); c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill([4, 6, 10].includes(i) ? 'FF2E7D4F' : 'FF2F4A43'); c.alignment = { wrapText: true, vertical: 'middle' }; c.border = border; });
+    cols.forEach(([h, w], i) => { ws.getColumn(i + 1).width = w; const c = ws.getCell(1, i + 1); c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill([2, 4, 6, 10].includes(i) ? 'FF2E7D4F' : 'FF2F4A43'); c.alignment = { wrapText: true, vertical: 'middle' }; c.border = border; });
     ws.getRow(1).height = 32;
     rows.forEach((r, k) => {
       const row = ws.getRow(k + 2), n = k + 2;
       const v = [r.m.machine_no, r.m.machine_name || '', r.m.location || '', r.kind, r.iv, r.last ? new Date(r.last + 'T00:00:00Z') : null, null, { formula: `IF(G${n}<>"",EDATE(G${n},E${n}),IF(F${n}<>"",EDATE(F${n},E${n}),""))` }, r.m.responsibility ? nm(r.m.responsibility) : '(ยังไม่ระบุ)', r.m.supplier || '', ''];
       v.forEach((x, i) => { const c = row.getCell(i + 1); c.value = x; c.border = border; c.alignment = { vertical: 'middle', wrapText: i === 1 }; });
       [6, 7, 8].forEach(i => row.getCell(i).numFmt = 'dd/mm/yyyy');
-      [5, 7, 11].forEach(i => { row.getCell(i).fill = fill(i === 7 && !r.last ? 'FFFFF2B3' : 'FFE6F4EA'); row.getCell(i).protection = { locked: false }; });
-      row.getCell(7).dataValidation = { type: 'date', operator: 'between', allowBlank: true, formulae: [new Date(Date.UTC(2015, 0, 1)), new Date(Date.UTC(2035, 11, 31))], showErrorMessage: true, errorTitle: 'วันที่ไม่ถูกต้อง', error: 'กรอกเป็นวันที่ เช่น 15/03/2026' };
-      row.getCell(5).dataValidation = { type: 'whole', operator: 'between', allowBlank: false, formulae: [1, 120], showErrorMessage: true, error: 'รอบเป็นจำนวนเดือน 1–120' };
+      [3, 5, 7, 11].forEach(i => { row.getCell(i).fill = fill((i === 7 && !r.last) || (i === 3 && !r.m.location) ? 'FFFFF2B3' : 'FFE6F4EA'); row.getCell(i).protection = { locked: false }; });
     });
+    // 1 ช่วงต่อคอลัมน์ (ใส่ทีละเซลล์แล้ว ExcelJS รวมช่วงซ้อนกัน ทำให้ Excel ขึ้นซ่อมไฟล์)
+    const last = rows.length + 1;
+    ws.dataValidations.add(`C2:C${last}`, { type: 'list', allowBlank: true, formulae: [locRef], showErrorMessage: true, errorTitle: 'Location', error: 'เลือกจากรายการ (กดลูกศรที่ช่อง)' });
+    ws.dataValidations.add(`E2:E${last}`, { type: 'whole', operator: 'between', allowBlank: false, formulae: [1, 120], showErrorMessage: true, error: 'รอบเป็นจำนวนเดือน 1–120' });
+    ws.dataValidations.add(`G2:G${last}`, { type: 'date', operator: 'between', allowBlank: true, formulae: [new Date(Date.UTC(2015, 0, 1)), new Date(Date.UTC(2035, 11, 31))], showErrorMessage: true, errorTitle: 'วันที่ไม่ถูกต้อง', error: 'กรอกเป็นวันที่ เช่น 15/03/2026' });
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: cols.length } };
     await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true, sort: true, formatColumns: true });
     const buf = await wb.xlsx.writeBuffer();
@@ -2241,23 +2247,24 @@ function parseForm(rows, g) {
     const m = D.machines.find(x => x.machine_no === no); if (!m) { bad.push(`${no}: ไม่พบเครื่องในระบบ`); continue; }
     const rawD = r['วันที่ทำล่าสุด (กรอก)'], d = rawD instanceof Date ? xDate(rawD) : rawD != null && rawD !== '' ? planDate(rawD) || (typeof rawD === 'number' ? xDate(rawD) : null) : null;
     const ivIn = parseInt(g(r, 'รอบ (เดือน)')), old = kind === 'PM' ? m.pm_last_date : m.cal_last_date, oldIv = kind === 'PM' ? m.pm_interval_month : m.cal_interval_month;
-    const note = g(r, 'หมายเหตุ');
+    const note = g(r, 'หมายเหตุ'), locIn = String(g(r, 'location') || '').trim();
+    const loc = locIn && locIn !== (m.location || '') ? (OPT.loc.includes(locIn) ? locIn : (bad.push(`${no}: Location “${locIn}” ไม่อยู่ในรายการ`), null)) : null;
     if (rawD != null && rawD !== '' && !d) { bad.push(`${no} ${kind}: อ่านวันที่ “${rawD}” ไม่ได้`); continue; }
     if (d && d > todayIso()) { bad.push(`${no} ${kind}: วันที่ ${dmy(d)} อยู่ในอนาคต`); continue; }
     const ivChange = ivIn > 0 && ivIn !== oldIv ? ivIn : null;
-    if (!d && !ivChange) continue;
-    out.push({ m, kind, d, old, older: d && old && d < old, same: d && d === old, iv: ivChange, oldIv, note });
+    if (!d && !ivChange && !loc) continue;
+    out.push({ m, kind, d, old, older: d && old && d < old, same: d && d === old, iv: ivChange, oldIv, note, loc });
   }
-  return { out: out.filter(x => !(x.same && !x.iv)), bad };
+  return { out: out.filter(x => !(x.same && !x.iv && !x.loc)), bad: [...new Set(bad)] };
 }
 function formReview(F, fileName) {
   const use = new Set(F.out.map((x, i) => i).filter(i => !F.out[i].older));
   modal(`<div class="h-row" style="margin:0 0 6px"><h2 style="margin:0;flex:1">นำเข้าแบบฟอร์มกรอกวันที่ PM / CAL</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
     <p class="sub" style="margin-top:0">${esc(fileName)} · พบการเปลี่ยนแปลง ${F.out.length} แผน${F.bad.length ? ` · ข้าม ${F.bad.length} แถว` : ''}</p>
-    ${F.out.length ? `<div class="tbl-wrap pl-tbl"><table><thead><tr><th><input type="checkbox" id="fmAll" aria-label="เลือกทั้งหมด" checked></th><th>Machine</th><th>งาน</th><th>วันที่ทำล่าสุด</th><th>รอบ</th><th>ผู้รับผิดชอบ</th><th>หมายเหตุ</th></tr></thead><tbody>
+    ${F.out.length ? `<div class="tbl-wrap pl-tbl"><table><thead><tr><th><input type="checkbox" id="fmAll" aria-label="เลือกทั้งหมด" checked></th><th>Machine</th><th>งาน</th><th>วันที่ทำล่าสุด</th><th>รอบ</th><th>Location</th><th>ผู้รับผิดชอบ</th><th>หมายเหตุ</th></tr></thead><tbody>
       ${F.out.map((x, i) => `<tr><td><input type="checkbox" class="fm-on" data-i="${i}" ${use.has(i) ? 'checked' : ''}></td><td><b class="mono">${esc(x.m.machine_no)}</b><br><span class="sub">${esc(x.m.machine_name || '')}</span></td><td>${x.kind}</td>
         <td>${x.d ? `${x.old ? `<span class="sub">${dmy(x.old)} →</span> ` : ''}<b>${dmy(x.d)}</b>${x.older ? ' <span class="pill s-wait" title="เก่ากว่าวันที่ในระบบ ติ๊กเลือกถ้าต้องการแก้ให้ย้อนกลับ">เก่ากว่าในระบบ</span>' : ''}${!x.old ? ' <span class="pill s-confirm">ใหม่</span>' : ''}` : '<span class="sub">-</span>'}</td>
-        <td>${x.iv ? `<span class="sub">${x.oldIv || '-'} →</span> <b>${x.iv} เดือน</b>` : `<span class="sub">${x.oldIv} เดือน</span>`}</td><td>${esc(nm(x.m.responsibility))}</td><td class="sub">${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ไม่มีวันที่หรือรอบที่เปลี่ยนจากในระบบ</div>'}
+        <td>${x.iv ? `<span class="sub">${x.oldIv || '-'} →</span> <b>${x.iv} เดือน</b>` : `<span class="sub">${x.oldIv} เดือน</span>`}</td><td>${x.loc ? `<span class="sub">${esc(x.m.location || '-')} →</span> <b>${esc(x.loc)}</b>` : `<span class="sub">${esc(x.m.location || '-')}</span>`}</td><td>${esc(nm(x.m.responsibility))}</td><td class="sub">${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ไม่มีวันที่หรือรอบที่เปลี่ยนจากในระบบ</div>'}
     ${F.bad.length ? `<details class="pl-box" open><summary>แถวที่ข้าม (${F.bad.length})</summary><ul class="pl-skip">${F.bad.map(b => `<li>${esc(b)}</li>`).join('')}</ul></details>` : ''}
     ${F.out.length ? `<div class="btns" style="margin-top:12px"><button class="btn" id="fmGo">บันทึก <span id="fmN">${use.size}</span> แผน</button><span class="sub">แผนที่วันที่เก่ากว่าในระบบไม่ถูกเลือกไว้ ติ๊กเองถ้าต้องการแก้ย้อนกลับ</span></div>` : ''}`, 'wide');
   const n = () => { const e = $('#fmN'); if (e) e.textContent = use.size; };
@@ -2267,7 +2274,7 @@ function formReview(F, fileName) {
     const go = $('#fmGo'); go.disabled = true;
     try {
       const per = {};
-      [...use].map(i => F.out[i]).forEach(x => { const u = per[x.m.machine_no] ||= {}; const k = x.kind === 'PM' ? 'pm' : 'cal'; if (x.d) u[k + '_last_date'] = x.d; if (x.iv) u[k + '_interval_month'] = x.iv; });
+      [...use].map(i => F.out[i]).forEach(x => { const u = per[x.m.machine_no] ||= {}; const k = x.kind === 'PM' ? 'pm' : 'cal'; if (x.d) u[k + '_last_date'] = x.d; if (x.iv) u[k + '_interval_month'] = x.iv; if (x.loc) u.location = x.loc; });
       for (const [no, u] of Object.entries(per)) { const { error } = await sb.from('machines').update({ ...u, updated_at: new Date().toISOString() }).eq('machine_no', no); if (error) throw error; }
       let created = 0; try { const { data } = await sb.rpc('ensure_pmcal_jobs'); created = data || 0; } catch (e) {}
       closeModal(); toast(`บันทึกวันที่ PM / CAL ${use.size} แผน (${Object.keys(per).length} เครื่อง)` + (created ? ` · เปิดใบงาน PM/CAL ใหม่ ${created}` : '')); reload();
