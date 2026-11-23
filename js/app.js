@@ -101,7 +101,10 @@ const money = v => v == null || v === '' ? '-' : Number(v).toLocaleString(undefi
 const M = no => D.machines.find(m => m.machine_no === no) || {};
 const hasShort = () => D.profiles.some(p => 'short_name' in p);
 // ชื่อย่อ (เช่น MM, OH, Nutt) → อีเมล · ใช้จับคู่ตอนนำเข้าแผนเดิม แต่หน้าเว็บแสดงชื่อจริงเสมอ
-const byShort = v => { const k = String(v || '').trim().toUpperCase(); return k ? D.profiles.find(p => p.active !== false && String(p.short_name || '').trim().toUpperCase() === k)?.email || null : null; };
+// ใส่ได้หลายชื่อ คั่นด้วย , เช่น "TON, Pang"
+const aliases = v => String(v || '').split(/[,/;]+/).map(x => x.trim().toUpperCase()).filter(Boolean);
+const byShort = v => { const k = String(v || '').trim().toUpperCase(); return k ? D.profiles.find(p => p.active !== false && aliases(p.short_name).includes(k))?.email || null : null; };
+const shortClash = (val, email) => { for (const a of aliases(val)) { const u = D.profiles.find(x => x.email !== email && aliases(x.short_name).includes(a)); if (u) return [a, u]; } return null; };
 const nm = e => { if (!e) return '-'; if (e === 'system') return 'ระบบ (PM/CAL อัตโนมัติ)'; const p = D.profiles.find(x => x.email === e); return p?.full_name || String(e).split('@')[0]; };
 const pill = s => `<span class="pill ${SCLS[s] || ''}">${esc(SL[s] || s)}</span>`;
 const role = () => S.me?.role || 'member';
@@ -694,9 +697,9 @@ const VIEWS = {
       <label class="btn ghost" for="uImport" style="cursor:pointer">นำเข้าผู้ใช้จาก Excel</label><input id="uImport" type="file" accept=".xlsx,.xls" hidden><button class="btn" id="backupBtn">สำรองข้อมูลทั้งหมด</button></div>
     <div class="note" style="margin-bottom:14px">กด <b>สำรองข้อมูลทั้งหมด</b> สัปดาห์ละครั้ง แล้วเก็บไฟล์ไว้ในโฟลเดอร์ของแผนก (ใบงาน, ประวัติ, เครื่องจักร, ผู้ใช้, เอกสาร อยู่ในไฟล์ Excel เดียว) · ไฟล์รูปและเอกสารแนบไม่รวมอยู่ในไฟล์นี้</div>
     <div class="note" style="margin-bottom:14px">ผู้ใช้เข้าระบบด้วยบัญชี Microsoft 365 ของบริษัท เฉพาะอีเมลในรายการนี้ที่ติ๊ก “ใช้งาน” เท่านั้นที่เข้าได้ · Foreman Day รับใบงานตามประเภทเครื่อง (Mold / อื่นๆ ใช้ของเครื่องจักร)</div>
-    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th>${hasShort() ? '<th title="อักษรย่อในไฟล์ Excel เดิม เช่น MM, OH · ใช้จับคู่ตอนนำเข้า หน้าเว็บแสดงชื่อจริง">ชื่อย่อ</th>' : ''}<th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th>${hasNotify ? '<th>รับอีเมล</th>' : ''}<th></th></tr></thead><tbody>
+    <div class="tbl-wrap"><table><thead><tr><th>อีเมล</th><th>ชื่อที่แสดง</th>${hasShort() ? '<th title="อักษรย่อ/ชื่อเล่นในไฟล์ Excel เดิม ใส่ได้หลายชื่อคั่นด้วย , · ใช้จับคู่ตอนนำเข้า หน้าเว็บแสดงชื่อจริง">ชื่อย่อ</th>' : ''}<th>บทบาท</th><th>FD ดูแลประเภท</th><th>Admin</th><th>อนุมัติ MEMO</th><th>ใช้งาน</th>${hasNotify ? '<th>รับอีเมล</th>' : ''}<th></th></tr></thead><tbody>
     ${D.profiles.map((p, i) => `<tr class="${p.active === false ? 'off' : ''}"><td>${esc(p.email)}</td>
-      <td><label class="sr" for="pn${i}">ชื่อ</label><input id="pn${i}" class="inp" value="${esc(p.full_name || '')}"></td>${hasShort() ? `<td><label class="sr" for="psn${i}">ชื่อย่อ</label><input id="psn${i}" class="inp short-inp" maxlength="20" value="${esc(p.short_name || '')}" placeholder="เช่น MM"></td>` : ''}
+      <td><label class="sr" for="pn${i}">ชื่อ</label><input id="pn${i}" class="inp" value="${esc(p.full_name || '')}"></td>${hasShort() ? `<td><label class="sr" for="psn${i}">ชื่อย่อ</label><input id="psn${i}" class="inp short-inp" maxlength="20" value="${esc(p.short_name || '')}" placeholder="เช่น MM หรือ TON, Pang"></td>` : ''}
       <td><label class="sr" for="pr${i}">บทบาท</label><select id="pr${i}" class="inp" data-rolesel="${i}">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}" ${p.role === k ? 'selected' : ''}>${v}</option>`).join('')}</select></td>
       <td><label class="sr" for="pf${i}">Foreman Day ดูแลประเภท</label>${fdSel('pf' + i, p.fd_type, p.role !== 'foreman_day')}</td>
       <td class="c"><label class="sr" for="pa${i}">สิทธิ์ Admin</label><input id="pa${i}" type="checkbox" ${p.is_admin || p.role === 'admin' ? 'checked' : ''} ${p.role === 'admin' ? 'disabled' : ''}></td>
@@ -708,7 +711,7 @@ const VIEWS = {
     <form id="fPreset" class="form" style="max-width:900px">
       <div class="field"><label for="psEmail">อีเมล *</label><input id="psEmail" class="inp" type="email" required placeholder="name@${esc(C.ALLOWED_DOMAIN)}"></div>
       <div class="field"><label for="psName">ชื่อที่แสดง</label><input id="psName" class="inp"></div>
-      ${hasShort() ? '<div class="field"><label for="psShort">ชื่อย่อ (ในไฟล์ Excel เดิม)</label><input id="psShort" class="inp" maxlength="20" placeholder="เช่น MM"></div>' : ''}
+      ${hasShort() ? '<div class="field"><label for="psShort">ชื่อย่อ (ในไฟล์ Excel เดิม)</label><input id="psShort" class="inp" maxlength="20" placeholder="เช่น MM หรือ TON, Pang"></div>' : ''}
       <div class="field"><label for="psRole">บทบาท</label><select id="psRole" class="inp" data-rolesel="ps">${Object.entries(ROLES).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div class="field"><label for="psFd">Foreman Day ดูแลประเภท</label>${fdSel('psFd', '', true)}</div>
       <div class="field"><span class="flabel">สิทธิ์เพิ่มเติม</span><label><input id="psAdmin" type="checkbox"> สิทธิ์ Admin</label><label><input id="psMemo" type="checkbox"> อนุมัติ MEMO ได้ (Manager App)</label></div>
@@ -1997,6 +2000,7 @@ async function importUsers(file) {
     if (!rows) return toast('ไม่พบชีท “ผู้ใช้” ในไฟล์');
     const { out, bad } = parseUsers(rows, g);
     if (!out.length) return toast('ไม่พบรายชื่อที่ถูกต้องในชีทผู้ใช้');
+    { const seen = {}; for (const u of out) for (const a of aliases(u.short_name)) { if (seen[a] && seen[a] !== u.email) return toast(`ชื่อย่อ ${a} ซ้ำกัน: ${seen[a]} และ ${u.email} แก้ในไฟล์แล้วนำเข้าใหม่`); seen[a] = u.email; } }
     const merged = D.profiles.map(x => out.find(u => u.email === x.email) || x).concat(out.filter(u => !D.profiles.some(x => x.email === u.email)));
     if (!merged.some(x => x.email === S.me.email && (x.role === 'admin' || x.is_admin))) return toast('ไฟล์นี้จะนำสิทธิ์ Admin ของคุณออก ให้ใส่ Y ในคอลัมน์สิทธิ์ Admin ของตัวเองก่อน');
     const { error } = await sb.from('app_users').upsert(out);
@@ -2506,7 +2510,7 @@ function bind() {
     const i = b.dataset.psave, p = D.profiles[i];
     const row = { full_name: $('#pn' + i).value.trim() || null, role: $('#pr' + i).value, fd_type: $('#pf' + i).value || null, is_admin: $('#pa' + i).checked, memo_approver: $('#pm' + i).checked, active: $('#pact' + i).checked };
     if ($('#pne' + i)) row.notify_email = $('#pne' + i).checked;
-    if ($('#psn' + i)) { row.short_name = $('#psn' + i).value.trim() || null; const dup = row.short_name && D.profiles.find(x => x.email !== p.email && String(x.short_name || '').toUpperCase() === row.short_name.toUpperCase()); if (dup) return toast(`ชื่อย่อ ${row.short_name} ใช้กับ ${nm(dup.email)} แล้ว`); }
+    if ($('#psn' + i)) { row.short_name = $('#psn' + i).value.trim() || null; const dup = shortClash(row.short_name, p.email); if (dup) return toast(`ชื่อย่อ ${dup[0]} ใช้กับ ${nm(dup[1].email)} แล้ว`); }
     if (row.role !== 'foreman_day') row.fd_type = null;
     if (admins(D.profiles.map(x => x.email === p.email ? { ...x, ...row } : x)) < 1) return toast('ต้องมีผู้ดูแลระบบ (Admin) อย่างน้อย 1 คน');
     if (p.email === S.me.email && !(row.role === 'admin' || row.is_admin) ) return toast('นำสิทธิ์ Admin ของตัวเองออกไม่ได้ ให้ Admin คนอื่นทำ');
@@ -2529,7 +2533,7 @@ function bind() {
     if (D.profiles.some(x => x.email === em)) return toast(em + ' มีอยู่แล้ว แก้ไขในตารางด้านบน');
     const r = $('#psRole').value;
     const sh = $('#psShort') ? $('#psShort').value.trim() || null : undefined;
-    if (sh && D.profiles.some(x => String(x.short_name || '').toUpperCase() === sh.toUpperCase())) return toast('ชื่อย่อ ' + sh + ' มีผู้ใช้อื่นใช้แล้ว');
+    const dup = sh && shortClash(sh, em); if (dup) return toast(`ชื่อย่อ ${dup[0]} ใช้กับ ${nm(dup[1].email)} แล้ว`);
     const { error } = await sb.from('app_users').insert({ email: em, full_name: $('#psName').value.trim() || null, ...(sh !== undefined ? { short_name: sh } : {}), role: r, fd_type: r === 'foreman_day' ? ($('#psFd').value || null) : null, is_admin: $('#psAdmin').checked, memo_approver: $('#psMemo').checked });
     if (error) return fail(error); toast('เพิ่มผู้ใช้แล้ว'); reload();
   };
