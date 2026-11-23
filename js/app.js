@@ -2140,12 +2140,12 @@ function planReview(P, fileName) {
         const row = { machine_no: m.no, machine_name: m.name, updated_at: now,
           supplier: m.supplier || old?.supplier || null, contact_person: m.contact || old?.contact_person || null, phone: m.phone || old?.phone || null,
           responsibility: pick[(m.resp || '').toUpperCase()] || old?.responsibility || null,
-          ...(byShort(m.eng) ? { eng_foreman: byShort(m.eng) } : {}),
           status: m.inactive ? 'Inactive' : old?.status || 'Active',
           maintenance_type: pm?.iv && cal?.iv ? 'PM & CAL' : pm?.iv ? 'PM' : cal?.iv ? 'CAL' : old?.maintenance_type || 'No Plan',
           pm_interval_month: pm?.iv || old?.pm_interval_month || null, pm_last_date: later(old?.pm_last_date, pm?.iv ? pm.last : null),
           cal_interval_month: cal?.iv || old?.cal_interval_month || null, cal_last_date: later(old?.cal_last_date, cal?.iv ? cal.last : null) };
-        if (!old) Object.assign(row, { machine_type: type, location: loc, priority: 'Normal' }, row.eng_foreman ? {} : { eng_foreman: fdOfType(type === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร') });
+        // คอลัมน์ Eng,Foreman ในไฟล์เดิมไม่นำเข้า · เครื่องใหม่ใช้ Foreman Day ตามประเภทเครื่อง
+        if (!old) Object.assign(row, { machine_type: type, location: loc, priority: 'Normal', eng_foreman: fdOfType(type === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร') });
         return row;
       });
       const groups = {}; rows.forEach(r => { const k = Object.keys(r).sort().join(','); (groups[k] ||= []).push(r); });
