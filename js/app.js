@@ -595,7 +595,7 @@ const VIEWS = {
     if (S.calView === 'week') return calWeek();
     const p = planList();
     const st = d => d < 0 ? `<span class="pill s-rej">เกินกำหนด ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน · ขั้น ${tierOf(d)}</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
-    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span>${moreMenu([`<button class="mi" data-planx="${new Date().getFullYear()}">Export แผน ${new Date().getFullYear()} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${new Date().getFullYear() + 1}">Export แผน ${new Date().getFullYear() + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<label class="mi" for="mImport">นำเข้าแผนจาก Excel (LAB EQUIP.PLAN)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : ''])}</div>
+    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span>${calMenu()}</div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}<br><button class="btn ghost sm" data-tag="${esc(x.m.machine_no)}|${x.kind}" title="พิมพ์ Tag ${x.kind}">Tag</button></td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
@@ -1585,7 +1585,7 @@ function calWeek() {
   const shift = n => { const d = new Date(mon); d.setDate(mon.getDate() + n * 7); return iso(d); };
   const t0 = todayIso(), last = days[6];
   const range = `${days[0].getDate()} ${TH[days[0].getMonth()]} – ${last.getDate()} ${TH[last.getMonth()]} ${last.getFullYear() + 543}`;
-  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}</div>
+  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}${calMenu()}</div>
     <div class="cal-nav"><button class="iconbtn ghosty" data-calweek="${shift(-1)}" aria-label="สัปดาห์ก่อน">‹</button><b>${range}</b><button class="iconbtn ghosty" data-calweek="${shift(1)}" aria-label="สัปดาห์ถัดไป">›</button><button class="btn ghost sm" data-calweek="">สัปดาห์นี้</button>
       <span class="cal-leg"><i class="ev-late"></i>เกินกำหนด <i class="ev-t3"></i>≤ 30 วัน <i class="ev-soon"></i>≤ 90 วัน <i class="ev-plan"></i>ตามแผน <i class="ev-done"></i>ทำแล้ว</span></div>
     <div class="wk">${days.map((d, i) => { const ds = iso(d), es = ev.filter(e => e.date === ds); return `<div class="wk-col ${ds === t0 ? 'today' : ''}">
@@ -1628,7 +1628,7 @@ function calMonth() {
   }
   const pick = S.calDay && S.calDay.startsWith(cur) ? ev.filter(e => e.date === S.calDay) : ev;
   const head = S.calDay && S.calDay.startsWith(cur) ? `วันที่ ${Number(S.calDay.slice(8))} ${TH[mo]} ${y + 543}` : `ทั้งเดือน ${TH[mo]} ${y + 543}`;
-  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}</div>
+  return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}${calMenu()}</div>
     <div class="cal-nav"><button class="iconbtn ghosty" data-calmonth="${shift(-1)}" aria-label="เดือนก่อน">‹</button><b>${TH[mo]} ${y + 543}</b><button class="iconbtn ghosty" data-calmonth="${shift(1)}" aria-label="เดือนถัดไป">›</button><button class="btn ghost sm" data-calmonth="">เดือนนี้</button>
       <span class="cal-leg"><i class="ev-late"></i>เกินกำหนด <i class="ev-t3"></i>≤ 30 วัน <i class="ev-soon"></i>≤ 90 วัน <i class="ev-plan"></i>ตามแผน <i class="ev-done"></i>ทำแล้ว</span></div>
     <div class="cal" role="grid">${['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'].map(d => `<div class="cdh">${d}</div>`).join('')}${cells.join('')}</div>
@@ -1842,6 +1842,8 @@ function printQR(list) {
   $('#qrPrint').onclick = () => window.print();
 }
 
+// เมนู ⋯ ของหน้า PM / CAL (ทุกมุมมอง): Export แผนรูปแบบเดิม + นำเข้าแผน
+const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<label class="mi" for="mImport">นำเข้าแผนจาก Excel (LAB EQUIP.PLAN)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
 /* ---------- PM / CAL Tag: สติกเกอร์ 7 × 4 ซม. ---------- */
 const dmy = d => d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : '';
 const TAG_DOC = { PM: '', CAL: 'CP-F-064' };
