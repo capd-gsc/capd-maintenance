@@ -523,6 +523,7 @@ const VIEWS = {
     return `<div class="h-row"><h1>${esc(q.id)}</h1>${pill(q.status)}${holdPill(q)}<span class="sp"></span>${moreMenu([
         canEdit(q) ? '<button class="mi" id="qEdit">แก้ไขใบงาน</button>' : '',
         OPEN(q.status) && canHold(q) && !q.hold_reason ? '<button class="mi" id="qHold">พักงาน (รออะไหล่ / รอ Vendor)</button>' : '',
+        q.job_type === 'pmcal' && q.machine_no ? `<button class="mi" data-tagjob="1">พิมพ์ Tag ${esc(q.pmcal_kind || '')}${q.status === 'closed' ? '' : ' (ร่าง)'}</button>` : '',
         q.memo_doc && !['quotation'].includes(q.status) ? `<button class="mi" data-memo="1">เปิด MEMO ${esc(q.memo_no || '')}</button>` : '',
         canCancel(q) ? '<button class="mi bad-t" id="qCancel">ยกเลิกใบงาน</button>' : '',
         isAdmin() ? '<button class="mi bad-t" id="qDel">ลบใบงาน</button>' : ''])}</div>
@@ -591,7 +592,7 @@ const VIEWS = {
     return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}</td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
+    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}<br><button class="btn ghost sm" data-tag="${esc(x.m.machine_no)}|${x.kind}" title="พิมพ์ Tag ${x.kind}">Tag</button></td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีแผน PM/CAL — ใส่วันที่ล่าสุดและ Interval ในหน้าเครื่องจักร</div>'}`;
   },
 
@@ -739,6 +740,7 @@ const VIEWS = {
       ${canCreate() ? `<button class="btn hide-phone" data-newfor="${esc(m.machine_no)}" data-primary="1">+ แจ้งซ่อมเครื่องนี้</button>` : ''}${moreMenu([
         isAdmin() ? `<button class="mi" data-medit="${esc(m.machine_no)}">แก้ไขข้อมูลเครื่อง</button>` : '',
         isAdmin() ? `<button class="mi" data-qr="${esc(m.machine_no)}">พิมพ์ QR</button>` : '',
+        m.pm_interval_month || m.cal_interval_month ? `<button class="mi" data-tag="${esc(m.machine_no)}">พิมพ์ Tag PM / CAL</button>` : '',
         D.hasMPhotos ? `<label class="mi" for="mpAdd">เพิ่มรูปเครื่อง</label>` : '',
         D.hasParts ? `<button class="mi" data-vlink="${esc(m.machine_no)}">+ Vendor</button>` : '',
         D.hasParts && canCreate() ? `<button class="mi" data-missue="${esc(m.machine_no)}">เบิกอะไหล่ใช้กับเครื่องนี้</button>` : ''])}</div>
@@ -1833,6 +1835,65 @@ function printQR(list) {
   $('#qrPrint').onclick = () => window.print();
 }
 
+/* ---------- PM / CAL Tag: สติกเกอร์ 7 × 4 ซม. ---------- */
+const dmy = d => d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : '';
+const TAG_DOC = { PM: '', CAL: 'CP-F-064' };
+const calRanges = () => { try { return JSON.parse(localStorage.getItem('capd-cal-range') || '{}'); } catch (e) { return {}; } };
+// ค่าเริ่มต้นของ Tag จากข้อมูลเครื่อง + ใบงาน PM/CAL ที่ปิดล่าสุด (แก้ได้ก่อนพิมพ์)
+function tagData(m, kind, q) {
+  const last = kind === 'PM' ? m.pm_last_date : m.cal_last_date, iv = kind === 'PM' ? m.pm_interval_month : m.cal_interval_month;
+  q = q || D.requests.filter(x => x.job_type === 'pmcal' && x.machine_no === m.machine_no && x.pmcal_kind === kind && x.status === 'closed').sort((a, b) => String(b.end_at).localeCompare(String(a.end_at)))[0];
+  const date = (q?.end_at ? String(q.end_at).slice(0, 10) : '') || last || todayIso();
+  return { no: m.machine_no, name: m.machine_name || '', kind, iv: iv || '', date, by: q ? (q.vendor || nm(q.closed_by)) : '', resp: m.responsibility ? nm(m.responsibility).split(' ')[0] : '', appr: q?.approved_by ? nm(q.approved_by) : '', range: calRanges()[m.machine_no] || '' };
+}
+function tagHtml(t) {
+  const due = t.date && t.iv ? addMonths(t.date, t.iv) : '';
+  const f = (k, v, cls = '') => `<div class="tg-f ${cls}"><span>${k}</span><b>${esc(v || '')}</b></div>`;
+  const pm = t.kind === 'PM';
+  return `<div class="tag"><div class="tg-head"><b>${pm ? 'PM TAG' : 'CALIBRATION TAG'}</b><small>${esc(C.APP_NAME || 'CAPD')}</small></div>
+    <div class="tg-body"><div class="tg-l">${f('ID No.', t.no, 'tgm big')}${f('Equipment', t.name)}
+      <div class="tg-2">${pm ? f('Interval', t.iv ? t.iv + ' เดือน' : '') : f('Cal. Range', t.range)}${f(pm ? 'PM by' : 'Cal. by', t.by)}</div>
+      <div class="tg-2">${f(pm ? 'PM Date' : 'Cal. Date', dmy(t.date), 'tgm')}${f('Responsible', t.resp)}</div>
+      <div class="tg-2">${f('Due Date', dmy(due), 'tgm due')}${pm ? f('Approved', t.appr) : `<div class="tg-f"><span></span><small class="tg-doc">${TAG_DOC.CAL}</small></div>`}</div></div>
+    <div class="tg-qr">${typeof qrcode === 'function' ? qrSvg(scanUrl(t.no)) : ''}<small>สแกนดูเครื่อง</small></div></div></div>`;
+}
+// items: [{ m, kind, q? }]
+function printTags(items) {
+  items = items.filter(x => x.m && x.m.machine_no);
+  if (!items.length) return toast('เครื่องนี้ยังไม่มีแผน PM / CAL');
+  const T = items.map(x => tagData(x.m, x.kind, x.q));
+  let paper = (() => { try { return localStorage.getItem('capd-tag-paper') || 'roll'; } catch (e) { return 'roll'; } })();
+  const inp = (i, k, label, type = 'text') => `<label>${label}<input type="${type}" data-tg="${i}" data-k="${k}" value="${esc(T[i][k])}"></label>`;
+  modal(`<div class="noprint tag-ui"><div class="h-row" style="margin:0 0 8px"><h2 style="margin:0;flex:1">พิมพ์ Tag PM / CAL (${T.length})</h2><button class="btn" id="tgPrint">พิมพ์</button><button class="btn ghost" data-close>ปิด</button></div>
+      <div class="seg" role="group" aria-label="กระดาษ"><button data-paper="roll">สติกเกอร์ม้วน 7 × 4 ซม.</button><button data-paper="a4">กระดาษ A4 (ตัดเอง)</button></div>
+      <p class="sub" id="tgHint"></p>
+      ${T.map((t, i) => `<details class="tg-edit" ${T.length === 1 ? 'open' : ''}><summary><b>${t.kind}</b> ${esc(t.no)} <span class="sub">${esc(t.name)}</span></summary><div class="fgrid">
+        ${inp(i, 'date', t.kind === 'PM' ? 'PM Date (วันที่ทำ)' : 'Cal. Date (วันที่สอบเทียบ)', 'date')}${inp(i, 'iv', 'Interval (เดือน)', 'number')}
+        ${inp(i, 'by', t.kind === 'PM' ? 'PM by (ผู้ทำ / Vendor)' : 'Cal. by (ผู้สอบเทียบ / Vendor)')}${inp(i, 'resp', 'Responsible by')}
+        ${t.kind === 'PM' ? inp(i, 'appr', 'Approved by') : inp(i, 'range', 'Cal. Range (เช่น 0–50 kN)')}</div></details>`).join('')}</div>
+    <div class="tag-sheet" id="tgSheet"></div>`, 'tag-modal');
+  const draw = () => {
+    $('#tgSheet').innerHTML = T.map(tagHtml).join('');
+    $('#tgSheet').className = 'tag-sheet paper-' + paper;
+    $$('[data-paper]').forEach(b => b.classList.toggle('on', b.dataset.paper === paper));
+    $('#tgHint').textContent = paper === 'roll' ? 'ตั้งขนาดกระดาษในไดรเวอร์เครื่องพิมพ์สติกเกอร์เป็น 70 × 40 มม. · ระยะขอบ “ไม่มี” · สเกล 100% · 1 Tag ต่อ 1 ดวง' : 'พิมพ์ลง A4 ได้ 14 ดวงต่อแผ่น (2 × 7) แล้วตัดตามเส้น';
+  };
+  let style = document.getElementById('tgPage'); if (!style) { style = document.createElement('style'); style.id = 'tgPage'; document.head.appendChild(style); }
+  const page = () => { style.textContent = paper === 'roll' ? '@media print{@page{size:70mm 40mm;margin:0}}' : '@media print{@page{size:A4;margin:8mm}}'; };
+  $$('[data-paper]').forEach(b => b.onclick = () => { paper = b.dataset.paper; try { localStorage.setItem('capd-tag-paper', paper); } catch (e) {} page(); draw(); });
+  $$('[data-tg]').forEach(el => el.oninput = () => {
+    const t = T[el.dataset.tg]; t[el.dataset.k] = el.value;
+    if (el.dataset.k === 'range') { try { const r = calRanges(); r[t.no] = el.value; localStorage.setItem('capd-cal-range', JSON.stringify(r)); } catch (e) {} }
+    draw();
+  });
+  page(); draw();
+  document.body.classList.add('printing-tag');
+  const bg = $('#modal'); const obs = new MutationObserver(() => { if (!document.body.contains(bg)) { document.body.classList.remove('printing-tag'); style.textContent = ''; obs.disconnect(); } });
+  obs.observe(document.body, { childList: true });
+  $('#tgPrint').onclick = () => window.print();
+}
+const tagsFor = m => [['PM', m.pm_interval_month], ['CAL', m.cal_interval_month]].filter(x => x[1]).map(([kind]) => ({ m, kind }));
+
 /* ---------- machines: form + import ---------- */
 const MF = [
   ['machine_no', 'Machine number *', 'text'], ['machine_name', 'Machine Name *', 'text'], ['model', 'Model', 'text'], ['serial_number', 'Serial Number', 'text'],
@@ -2237,6 +2298,8 @@ function bind() {
   $$('[data-scan]').forEach(a => a.onclick = e => { e.preventDefault(); openScan(a.dataset.scan); });
   $$('[data-newfor]').forEach(b => b.onclick = () => { S.prefill = b.dataset.newfor; S.view = 'new'; render(); window.scrollTo(0, 0); });
   $$('[data-qr]').forEach(b => b.onclick = () => printQR([M(b.dataset.qr)]));
+  $$('[data-tag]').forEach(b => b.onclick = () => { const [no, kind] = b.dataset.tag.split('|'); const m = M(no); printTags(kind ? [{ m, kind }] : tagsFor(m)); });
+  $$('[data-tagjob]').forEach(b => b.onclick = () => { const q = D.requests.find(x => x.id === S.sel); if (q) printTags([{ m: M(q.machine_no), kind: q.pmcal_kind || 'PM', q: q.status === 'closed' ? q : null }]); });
   $('#qrAll') && ($('#qrAll').onclick = () => printQR(D.machines.filter(m => m.status !== 'Inactive')));
   $$('[data-medit]').forEach(b => b.onclick = () => machineForm(b.dataset.medit));
   $$('[data-mdel]').forEach(b => b.onclick = () => machineDeleteForm(b.dataset.mdel));
