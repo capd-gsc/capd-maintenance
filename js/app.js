@@ -17,7 +17,7 @@ const OPT = {
   mstatus: ['Active', 'Maintenance', 'Inactive'],
   prio: ['Critical', 'High', 'Normal'],
   mtype: ['PM', 'CAL', 'PM & CAL', 'No Plan'],
-  interval: [3, 6, 12, 24],
+  interval: [1, 2, 3, 4, 6, 12, 24, 36],
   docKind: ['คู่มือ PDF', 'SOP/WI', 'Drawing', 'วิดีโอ', 'วิธีแก้ปัญหาเบื้องต้น', 'Certificate', 'อื่นๆ']
 };
 const ROLES = { member: 'Member', foreman_shift: 'Foreman Shift', foreman_day: 'Foreman Day', manager: 'Manager', admin: 'Admin' };
@@ -578,7 +578,7 @@ const VIEWS = {
     if (S.mq) { const k = S.mq.toLowerCase(); rows = rows.filter(m => Object.values(m).join(' ').toLowerCase().includes(k)); }
     return `<div class="h-row"><h1>Machine Master</h1><span class="sub">${D.machines.length} เครื่อง</span>${D.hasParts ? '<button class="btn ghost" data-nav="vendors">Vendor</button>' : ''}
       ${isAdmin() ? `<button class="btn" id="mAdd">+ เพิ่มเครื่อง</button><button class="btn ghost" id="qrAll">พิมพ์ QR ทั้งหมด</button><label class="btn ghost" for="mImport" style="cursor:pointer">นำเข้าจาก Excel</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>` : ''}</div>
-    <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx (ชีทผู้ใช้ + Machine Master รวม PM/CAL) หรือไฟล์ DATA.xlsx เดิม · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
+    <div class="fbar"><span class="sub">${isAdmin() ? 'นำเข้าแบบฟอร์ม CAPD-Maintenance-Data-Template.xlsx หรือไฟล์แผนเดิม (ชีท LAB EQUIP.PLAN) · กดรหัสเครื่องเพื่อดู Dashboard' : 'แก้ไขได้เฉพาะ Admin'}</span><div class="sp"></div><label class="sr" for="mq">ค้นหาเครื่อง</label><input id="mq" class="search" placeholder="ค้นหาเครื่อง / Location" value="${esc(S.mq)}"></div>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine no.</th><th>Machine Name</th><th>Model</th><th>Serial</th><th>Type</th><th>Location</th><th>Status</th><th>Priority</th><th>Maint. Type</th><th>Responsibility</th><th>Vendor</th><th>Contact</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${rows.map(m => `<tr><td class="mono"><span class="mrow">${mPhotos(m.machine_no)[0] ? imgTag(mPhotos(m.machine_no)[0].path, '', 'mthumb') : ''}<a class="folio" href="?m=${encodeURIComponent(m.machine_no)}" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a></span></td><td>${esc(m.machine_name)}${m.parent_machine ? '<br>' + parentTag(m) : ''}${kidsOf(m.machine_no).length ? `<br><span class="sub">อุปกรณ์ประกอบ ${kidsOf(m.machine_no).length} รายการ</span>` : ''}</td><td>${esc(m.model)}</td><td class="mono">${esc(m.serial_number)}</td><td>${esc(m.machine_type)}</td><td>${esc(m.location)}</td><td><span class="pill ${m.status === 'Active' ? 's-confirm' : m.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(m.status)}</span></td><td class="u-${esc(m.priority)}">${esc(m.priority)}</td><td>${esc(m.maintenance_type)}</td><td>${esc(nm(m.responsibility))}</td><td>${esc(m.supplier)}</td><td>${esc(m.contact_person)}<br><span class="sub">${esc(m.phone)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="btn ghost sm" data-medit="${esc(m.machine_no)}">แก้ไข</button><button class="btn ghost sm" data-qr="${esc(m.machine_no)}">QR</button><button class="btn ghost sm bad-t" data-mdel="${esc(m.machine_no)}">ลบ</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีข้อมูลเครื่องจักร</div>'}`;
@@ -589,7 +589,7 @@ const VIEWS = {
     if (S.calView === 'week') return calWeek();
     const p = planList();
     const st = d => d < 0 ? `<span class="pill s-rej">เกินกำหนด ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน · ขั้น ${tierOf(d)}</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
-    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span></div>
+    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span>${moreMenu([`<button class="mi" data-planx="${new Date().getFullYear()}">Export แผน ${new Date().getFullYear()} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${new Date().getFullYear() + 1}">Export แผน ${new Date().getFullYear() + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<label class="mi" for="mImport">นำเข้าแผนจาก Excel (LAB EQUIP.PLAN)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : ''])}</div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
     ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}<br><button class="btn ghost sm" data-tag="${esc(x.m.machine_no)}|${x.kind}" title="พิมพ์ Tag ${x.kind}">Tag</button></td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
@@ -2000,9 +2000,195 @@ async function importUsers(file) {
     reload();
   } catch (e) { fail(e); }
 }
+/* ---------- แผน PM / CAL รูปแบบเดิม (ชีท LAB EQUIP.PLAN): นำเข้า + Export ---------- */
+const PLAN_SHEET = 'LAB EQUIP.PLAN';
+const MON3 = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const isGreen = c => { const h = c?.s?.fgColor?.rgb; if (!h || h.length < 6) return false; const x = h.slice(-6), r = parseInt(x.slice(0, 2), 16), g = parseInt(x.slice(2, 4), 16), b = parseInt(x.slice(4, 6), 16); return g > 120 && g > r + 40 && g > b + 40; };
+// "1 ปี" "1ปี" "2 เดือน" "4ครั้ง/1 ปี" → เดือน · "ไม่มีการ Cal." → null
+function planIv(v) {
+  const t = String(v ?? '').replace(/\s+/g, '');
+  if (!t || /ไม่มี/.test(t)) return null;
+  let m = t.match(/^(\d+)ครั้ง\/(\d*)ปี/); if (m) return Math.max(1, Math.round(12 * (Number(m[2]) || 1) / Number(m[1])));
+  m = t.match(/^(\d+(?:\.\d+)?)(ปี|year|yr|y)/i); if (m) return Math.round(Number(m[1]) * 12);
+  m = t.match(/^(\d+)(เดือน|month|m)/i); if (m) return Number(m[1]);
+  return null;
+}
+// วันที่ในช่องเดือน: Date จริง · "PM5/3/26" · "29-30/1/25" · "PM14.11.26" · "Pm 1/9/2027" (วัน/เดือน/ปี)
+function planDate(v) {
+  if (v instanceof Date) return xDate(v);
+  const m = String(v ?? '').match(/(\d{1,2})(?:\s*-\s*(\d{1,2}))?\s*[./]\s*(\d{1,2})\s*[./]\s*(\d{2,4})/);
+  if (!m) return null;
+  let d = Number(m[2] || m[1]), mo = Number(m[3]), y = Number(m[4]); if (y < 100) y += 2000; if (y > 2400) y -= 543;
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  return `${y}-${pad(mo)}-${pad(d)}`;
+}
+const PHONE_RE = /0\d{1,2}[-\s]?\d{3}[-\s]?\d{3,4}/;
+function parsePlanSheet(ws) {
+  const R = XLSX.utils.decode_range(ws['!ref']), cell = (r, c) => ws[XLSX.utils.encode_cell({ r, c })];
+  const val = (r, c) => { const x = cell(r, c); if (!x || x.v == null) return null; return typeof x.v === 'string' ? x.v.replace(/\s+/g, ' ').trim() || null : x.v; };
+  let hr = -1; const col = {};
+  for (let r = R.s.r; r <= Math.min(R.e.r, 30) && hr < 0; r++) for (let c = R.s.c; c <= Math.min(R.e.c, 40); c++) if (/^machine\s*number$/i.test(String(val(r, c) || ''))) { hr = r; break; }
+  if (hr < 0) return null;
+  for (let c = R.s.c; c <= R.e.c; c++) {
+    const h = String(val(hr, c) || '').toLowerCase().replace(/\s+/g, ' ');
+    if (!h) continue;
+    const k = /^machine/.test(h) ? 'no' : /^desc/.test(h) ? 'name' : /^sp.?art|spare/.test(h) ? 'spare' : /^supplier|^vendor/.test(h) ? 'supplier' : /^respons/.test(h) ? 'resp' : /^eng/.test(h) ? 'eng' : /^contact/.test(h) ? 'contact' : /^activity/.test(h) ? 'act' : /period|interval/.test(h) ? 'iv' : MON3.includes(h.slice(0, 3)) && h.length <= 9 ? 'm' + MON3.indexOf(h.slice(0, 3)) : null;
+    if (k && col[k] == null) col[k] = c;
+  }
+  if (col.act == null || col.m0 == null) return null;
+  // ค่าในเซลล์ที่รวม (merge) อยู่มุมซ้ายบน → กระจายให้ทุกแถวในช่วงนั้น
+  const mergedVal = {}; (ws['!merges'] || []).forEach(m => { for (let r = m.s.r; r <= m.e.r; r++) for (let c = m.s.c; c <= m.e.c; c++) mergedVal[r + ':' + c] = val(m.s.r, m.s.c); });
+  const V = (r, c) => c == null ? null : (val(r, c) ?? mergedVal[r + ':' + c] ?? null);
+  const years = {}; const cells = [];
+  const out = new Map(), notes = [], skipped = [];
+  let cur = null;
+  for (let r = hr + 1; r <= R.e.r; r++) {
+    const a = val(r, col.no);
+    if (a != null) {
+      const id = String(a).trim();
+      if (/^[A-Za-z]{1,6}[-_ ]?\d[\w\-./]*$/.test(id) && id.length <= 30) {
+        cur = out.get(id) || { no: id, row: r + 1, name: '', supplier: null, resp: null, eng: null, contact: null, phone: null, spare: null, inactive: false, kinds: {}, other: [] };
+        const name = String(V(r, col.name) || '').trim();
+        cur.inactive = /ยกเลิก|ขายซาก/.test(name);
+        cur.name = name.replace(/\s*ยกเลิก(ใช้งาน|ใช้)?\s*$/, '').trim() || id;
+        cur.supplier = V(r, col.supplier) && String(V(r, col.supplier)).trim();
+        cur.resp = V(r, col.resp) && String(V(r, col.resp)).trim();
+        cur.eng = V(r, col.eng) && String(V(r, col.eng)).trim();
+        const ct = String(V(r, col.contact) || ''); const ph = ct.match(PHONE_RE);
+        cur.phone = ph ? ph[0].replace(/\s/g, '') : null; cur.contact = ct.replace(PHONE_RE, '').replace(/[\s,]+$/, '').trim() || null;
+        cur.spare = V(r, col.spare);
+        out.set(id, cur);
+      } else if (!mergedVal[r + ':' + col.no] || mergedVal[r + ':' + col.no] === a) { notes.push({ row: r + 1, text: String(a).trim() }); cur = null; continue; }
+    }
+    if (!cur) continue;
+    const actRaw = String(val(r, col.act) || '').trim(); if (!actRaw) continue;
+    const up = actRaw.toUpperCase().replace(/\s+/g, ' ');
+    const kinds = /^LOAD/.test(up) ? ['LOAD'] : /^PM\s*[,/&]\s*CAL$/.test(up) ? ['PM', 'CAL'] : up === 'PM' ? ['PM'] : up === 'CAL' ? ['CAL'] : [];
+    const ivRaw = val(r, col.iv), iv = planIv(ivRaw);
+    const mcells = [];
+    for (let k = 0; k < 12; k++) {
+      const c = col['m' + k]; if (c == null) continue;
+      const x = cell(r, c); const v = x && x.v != null && x.v !== '' ? x.v : null;
+      if (v == null && !isGreen(x)) continue;
+      const d = planDate(v), green = isGreen(x);
+      if (d) years[d.slice(0, 4)] = (years[d.slice(0, 4)] || 0) + 1;
+      if (typeof v === 'string' && /ยกเลิก|ขายซาก|รอสั่งซื้อเครื่องใหม่/.test(v)) cur.inactive = true;
+      mcells.push({ month: k, raw: v == null ? '' : v instanceof Date ? xDate(v) : String(v).trim(), date: d, green });
+    }
+    if (!kinds.length) { cur.other.push({ act: actRaw, iv: ivRaw }); skipped.push({ no: cur.no, act: actRaw }); continue; }
+    kinds.forEach(kind => { cur.kinds[kind] = { kind, ivRaw, iv, cells: mcells }; cells.push(cur.kinds[kind]); });
+  }
+  const year = Number(Object.entries(years).sort((a, b) => b[1] - a[1])[0]?.[0]) || new Date().getFullYear();
+  const today = todayIso();
+  // วันที่ทำล่าสุด: ช่องสีเขียวที่มีวันที่ (มั่นใจ) > ช่องสีเขียวไม่มีวันที่ = วันที่ 1 ของเดือนนั้น (ต้องตรวจ) > วันที่ในอดีตที่ไม่ได้ทำสีเขียว (ต้องตรวจ)
+  for (const k of cells) {
+    const g = k.cells.filter(c => c.green && c.date && c.date <= today).map(c => c.date).sort();
+    const gm = k.cells.filter(c => c.green && !c.date).map(c => `${year}-${pad(c.month + 1)}-01`).filter(d => d <= today).sort();
+    const past = k.cells.filter(c => !c.green && c.date && c.date <= today).map(c => c.date).sort();
+    k.last = g.at(-1) || null; k.how = k.last ? 'green' : null;
+    if (gm.length && (!k.last || gm.at(-1) > k.last)) { k.last = gm.at(-1); k.how = 'month'; }
+    if (!k.last && past.length) { k.last = past.at(-1); k.how = 'past'; }
+    k.odd = k.cells.some(c => c.date && Number(c.date.slice(5, 7)) !== c.month + 1);
+  }
+  return { list: [...out.values()], notes, skipped, year, header: hr + 1 };
+}
+const planMap = () => { try { return JSON.parse(localStorage.getItem('capd-plan-initials') || '{}'); } catch (e) { return {}; } };
+function planReview(P, fileName) {
+  const map = planMap(), users = D.profiles.filter(p => p.active !== false);
+  const initials = [...new Set(P.list.map(m => m.resp).filter(Boolean).map(x => x.toUpperCase()))].sort();
+  const autoUser = ini => map[ini] || users.find(u => (u.full_name || '').toUpperCase() === ini || u.email.split('@')[0].toUpperCase() === ini)?.email || '';
+  const pick = {}; initials.forEach(i => pick[i] = autoUser(i));
+  const has = P.list.filter(m => Object.keys(m.kinds).length);
+  const sel = new Set(has.map(m => m.no));
+  const flag = k => !k ? '' : !k.iv ? '<span class="pill s-done">ไม่มีรอบ</span>' : !k.last ? '<span class="pill s-wait">ไม่มีวันที่ทำ</span>' : k.how === 'green' ? '' : `<span class="pill s-wait" title="${k.how === 'month' ? 'ช่องสีเขียวไม่มีวันที่ ใช้วันที่ 1 ของเดือน' : 'วันที่ในอดีตที่ไม่ได้ทำสีเขียว'}">ตรวจวันที่</span>`;
+  const kcell = (m, kind) => { const k = m.kinds[kind]; if (!k) return '<span class="sub">-</span>'; return `<span class="sub">${esc(k.ivRaw || '-')}</span>${k.iv ? ` <b>${k.iv} ด.</b>` : ''}<br><input type="date" class="pl-d" data-no="${esc(m.no)}" data-kind="${kind}" value="${k.last || ''}" ${k.iv ? '' : 'disabled'}> ${flag(k)}${k.odd ? ' <span class="pill s-rej" title="วันที่ในช่องไม่ตรงกับคอลัมน์เดือน">เดือนไม่ตรง</span>' : ''}`; };
+  const exists = no => D.machines.some(x => x.machine_no === no);
+  const ks = has.flatMap(m => Object.values(m.kinds)).filter(k => k.iv), cnt = { ok: ks.filter(k => k.last && k.how === 'green').length, chk: ks.filter(k => k.last && k.how !== 'green').length, none: ks.filter(k => !k.last).length };
+  modal(`<div class="h-row" style="margin:0 0 6px"><h2 style="margin:0;flex:1">นำเข้าแผน PM / CAL รูปแบบเดิม</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
+    <p class="sub" style="margin-top:0">${esc(fileName)} · ชีท ${PLAN_SHEET} · แผนปี ${P.year} · ระบบอ่าน “วันที่ทำล่าสุด” จากช่อง<b style="color:#2e9b4f">สีเขียว</b> (Complete) แก้วันที่ได้ก่อนบันทึก</p>
+    <div class="pl-sum"><div><b>${has.length}</b><span>เครื่องที่มี PM / CAL</span></div><div><b>${cnt.ok}</b><span>แผนที่มีวันที่ทำ (ช่องเขียว)</span></div><div class="w"><b>${cnt.chk}</b><span>ควรตรวจวันที่</span></div><div class="x"><b>${cnt.none}</b><span>ยังไม่มีวันที่ทำ</span></div></div>
+    ${cnt.none ? `<p class="sub" style="margin:0 0 6px">แผนที่ยังไม่มีวันที่ทำ: นำเข้ารอบ (Interval) ไว้ก่อน แล้วกรอกวันที่ในตารางนี้ หรือกด “ทำแล้ววันนี้” ในหน้า PM / CAL ภายหลัง ระบบจึงจะคำนวณวันครบกำหนดได้</p>` : ''}
+    ${initials.length ? `<details class="pl-box" open><summary><b>ผู้รับผิดชอบ (Responsibility)</b> · ไฟล์ใช้อักษรย่อ เลือกว่าเป็นใคร (ระบบจำไว้ในเครื่องนี้)</summary><div class="pl-ini">${initials.map(i => `<label><b>${esc(i)}</b><select data-ini="${esc(i)}"><option value="">— ไม่ระบุ —</option>${users.map(u => `<option value="${esc(u.email)}" ${pick[i] === u.email ? 'selected' : ''}>${esc(nm(u.email))}</option>`).join('')}</select></label>`).join('')}</div></details>` : ''}
+    <div class="pl-opt"><label>ประเภทเครื่อง (เฉพาะเครื่องใหม่)<select id="plType">${OPT.type.map(t => `<option ${t === 'เครื่องทดสอบ' ? 'selected' : ''}>${t}</option>`).join('')}</select></label><label>Location (เฉพาะเครื่องใหม่)<select id="plLoc"><option value="">— ไม่ระบุ —</option>${OPT.loc.map(t => `<option>${esc(t)}</option>`).join('')}</select></label></div>
+    <div class="tbl-wrap pl-tbl"><table><thead><tr><th><input type="checkbox" id="plAll" checked aria-label="เลือกทั้งหมด"></th><th>Machine</th><th>PM</th><th>CAL</th><th>Vendor / ผู้รับผิดชอบ</th></tr></thead><tbody>
+      ${has.map(m => `<tr><td><input type="checkbox" class="pl-on" data-no="${esc(m.no)}" checked></td><td><b class="mono">${esc(m.no)}</b> ${exists(m.no) ? '<span class="pill s-confirm">มีแล้ว · อัปเดต</span>' : '<span class="pill s-queue">ใหม่</span>'}${m.inactive ? ' <span class="pill s-done">Inactive</span>' : ''}<br><span class="sub">${esc(m.name)}</span></td><td>${kcell(m, 'PM')}</td><td>${kcell(m, 'CAL')}</td><td>${esc(m.supplier || '-')}<br><span class="sub">${esc(m.resp || '')}${m.other.length ? ' · ข้าม: ' + esc(m.other.map(o => o.act).join(', ')) : ''}</span></td></tr>`).join('')}</tbody></table></div>
+    ${P.notes.length || P.skipped.length ? `<details class="pl-box"><summary>แถวที่ไม่นำเข้า (${P.notes.length + P.skipped.length})</summary><ul class="pl-skip">${P.notes.map(n => `<li>แถว ${n.row}: บันทึก “${esc(n.text.slice(0, 80))}”</li>`).join('')}${P.skipped.map(x => `<li>${esc(x.no)}: ${esc(x.act)} (ระบบรองรับ PM / CAL)</li>`).join('')}</ul></details>` : ''}
+    <div class="btns" style="margin-top:12px"><button class="btn" id="plGo">นำเข้า <span id="plN">${sel.size}</span> เครื่อง</button><span class="sub">เครื่องที่มีอยู่แล้ว: อัปเดตเฉพาะช่องที่ไฟล์มีข้อมูล และไม่ย้อนวันที่ทำล่าสุดให้เก่ากว่าในระบบ</span></div>`, 'wide');
+  const n = () => { $('#plN').textContent = sel.size; };
+  $$('.pl-on').forEach(c => c.onchange = () => { c.checked ? sel.add(c.dataset.no) : sel.delete(c.dataset.no); n(); });
+  $('#plAll').onchange = e => { $$('.pl-on').forEach(c => { c.checked = e.target.checked; c.onchange(); }); };
+  $$('[data-ini]').forEach(s2 => s2.onchange = () => { pick[s2.dataset.ini] = s2.value; });
+  $$('.pl-d').forEach(d => d.onchange = () => { const k = P.list.find(m => m.no === d.dataset.no).kinds[d.dataset.kind]; k.last = d.value || null; k.how = 'green'; });
+  $('#plGo').onclick = async () => {
+    const go = $('#plGo'); go.disabled = true;
+    try {
+      try { localStorage.setItem('capd-plan-initials', JSON.stringify({ ...map, ...pick })); } catch (e) {}
+      const type = $('#plType').value, loc = $('#plLoc').value || null, now = new Date().toISOString();
+      const rows = has.filter(m => sel.has(m.no)).map(m => {
+        const old = D.machines.find(x => x.machine_no === m.no), pm = m.kinds.PM, cal = m.kinds.CAL;
+        const later = (a, b) => !a ? b || null : !b ? a : a > b ? a : b;
+        const row = { machine_no: m.no, machine_name: m.name, updated_at: now,
+          supplier: m.supplier || old?.supplier || null, contact_person: m.contact || old?.contact_person || null, phone: m.phone || old?.phone || null,
+          responsibility: pick[(m.resp || '').toUpperCase()] || old?.responsibility || null,
+          status: m.inactive ? 'Inactive' : old?.status || 'Active',
+          maintenance_type: pm?.iv && cal?.iv ? 'PM & CAL' : pm?.iv ? 'PM' : cal?.iv ? 'CAL' : old?.maintenance_type || 'No Plan',
+          pm_interval_month: pm?.iv || old?.pm_interval_month || null, pm_last_date: later(old?.pm_last_date, pm?.iv ? pm.last : null),
+          cal_interval_month: cal?.iv || old?.cal_interval_month || null, cal_last_date: later(old?.cal_last_date, cal?.iv ? cal.last : null) };
+        if (!old) Object.assign(row, { machine_type: type, location: loc, priority: 'Normal', eng_foreman: fdOfType(type === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร') });
+        return row;
+      });
+      const groups = {}; rows.forEach(r => { const k = Object.keys(r).sort().join(','); (groups[k] ||= []).push(r); });
+      for (const g2 of Object.values(groups)) { const { error } = await sb.from('machines').upsert(g2); if (error) throw error; }
+      let created = 0; try { const { data } = await sb.rpc('ensure_pmcal_jobs'); created = data || 0; } catch (e) {}
+      closeModal(); toast(`นำเข้าแผน PM / CAL ${rows.length} เครื่อง` + (created ? ` · เปิดใบงาน PM/CAL ใหม่ ${created}` : '')); reload();
+    } catch (e) { go.disabled = false; fail(e); }
+  };
+}
+// Export แผน 12 เดือน หน้าตาเหมือนไฟล์เดิม: เหลือง = แผน · เขียว = ทำแล้ว (วันที่) · ต้องใช้ ExcelJS (โหลดเมื่อกด)
+const loadJs = src => new Promise((ok, no) => { if ([...document.scripts].some(s2 => s2.src === src)) return ok(); const el = document.createElement('script'); el.src = src; el.onload = ok; el.onerror = () => no(new Error('โหลดตัวสร้าง Excel ไม่สำเร็จ')); document.head.appendChild(el); });
+async function exportPlan(year) {
+  try {
+    if (typeof ExcelJS === 'undefined') await loadJs('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js');
+    year = year || new Date().getFullYear();
+    const wb = new ExcelJS.Workbook(), ws = wb.addWorksheet(PLAN_SHEET, { views: [{ state: 'frozen', xSplit: 2, ySplit: 4 }] });
+    const Y = 'FFFFFF00', G = 'FF92D050', fill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
+    const thin = { style: 'thin', color: { argb: 'FF999999' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    ws.getCell('A1').value = 'Plan'; ws.getCell('A1').fill = fill(Y); ws.getCell('A2').value = 'Complete'; ws.getCell('A2').fill = fill(G);
+    ws.getCell('C1').value = `PM / CAL Plan ${year}`; ws.getCell('C1').font = { bold: true, size: 14 };
+    ws.getCell('C2').value = `${C.APP_NAME} · Export ${dmy(todayIso())}`; ws.getCell('C2').font = { size: 9, color: { argb: 'FF666666' } };
+    const head = ['Machine number', 'Description', 'Location', 'Supplier', 'Responsibility', 'Eng,Foreman', 'Contact\nPerson', 'Activity', 'PM\nPeriod', ...['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']];
+    const hr = ws.getRow(4); head.forEach((h, i) => { const c = hr.getCell(i + 1); c.value = h; c.font = { bold: true }; c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; c.fill = fill('FFD9E1F2'); c.border = border; }); hr.height = 30;
+    [16, 40, 18, 16, 16, 14, 22, 8, 10, ...Array(12).fill(11)].forEach((w, i) => ws.getColumn(i + 1).width = w);
+    const per = n => !n ? 'ไม่มีการ PM/Cal.' : n % 12 === 0 ? `${n / 12} ปี` : `${n} เดือน`;
+    const ms = D.machines.filter(m => m.pm_interval_month || m.cal_interval_month || m.pm_last_date || m.cal_last_date).sort((a, b) => a.machine_no.localeCompare(b.machine_no));
+    let r = 5;
+    for (const m of ms) {
+      const info = [m.machine_no, (m.machine_name || '') + (m.status === 'Inactive' ? ' ยกเลิกใช้งาน' : ''), m.location || '', m.supplier || '', m.responsibility ? nm(m.responsibility) : '', m.eng_foreman ? nm(m.eng_foreman) : '', [m.contact_person, m.phone].filter(Boolean).join(' ')];
+      [['PM', m.pm_last_date, m.pm_interval_month], ['CAL', m.cal_last_date, m.cal_interval_month]].forEach(([kind, last, iv], j) => {
+        const row = ws.getRow(r + j);
+        if (j === 0) info.forEach((v, i) => row.getCell(i + 1).value = v);
+        row.getCell(8).value = kind; row.getCell(9).value = per(iv);
+        const done = {}; D.requests.filter(q => q.job_type === 'pmcal' && q.machine_no === m.machine_no && q.pmcal_kind === kind && q.status === 'closed' && q.end_at && String(q.end_at).startsWith(String(year))).forEach(q => { done[Number(String(q.end_at).slice(5, 7)) - 1] = String(q.end_at).slice(0, 10); });
+        if (last && String(last).startsWith(String(year))) done[Number(String(last).slice(5, 7)) - 1] ||= String(last).slice(0, 10);
+        const plan = {}; if (last && iv) { let d = addMonths(last, iv), guard = 0; while (d.slice(0, 4) <= String(year) && guard++ < 60) { if (d.startsWith(String(year))) plan[Number(d.slice(5, 7)) - 1] = d; d = addMonths(d, iv); } }
+        for (let k = 0; k < 12; k++) { const c = row.getCell(10 + k); if (done[k]) { c.value = `${kind} ${dmy(done[k])}`; c.fill = fill(G); } else if (plan[k]) { c.value = kind; c.fill = fill(Y); } c.alignment = { horizontal: 'center', vertical: 'middle' }; c.font = { size: 9 }; }
+        for (let i = 1; i <= 21; i++) { const c = row.getCell(i); c.border = border; if (i <= 9) c.alignment = { vertical: 'middle', wrapText: true }; }
+      });
+      for (let c = 1; c <= 7; c++) ws.mergeCells(r, c, r + 1, c);
+      r += 2;
+    }
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = `PM-CAL-Plan-${year}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast(`Export แผน PM / CAL ปี ${year} · ${ms.length} เครื่อง`);
+  } catch (e) { fail(e); }
+}
+
 async function importExcel(file) {
   try {
-    const { sheet, g } = readBook(XLSX.read(await file.arrayBuffer(), { cellDates: true }));
+    const wb0 = XLSX.read(await file.arrayBuffer(), { cellDates: true, cellStyles: true });
+    const pn = Object.keys(wb0.Sheets).find(n => n.trim().toUpperCase() === PLAN_SHEET);
+    if (pn) { const P = parsePlanSheet(wb0.Sheets[pn]); if (!P) return toast('อ่านหัวตารางในชีท ' + PLAN_SHEET + ' ไม่ได้ (ต้องมีคอลัมน์ Machine number, Activity, Jan–Dec)'); return planReview(P, file.name); }
+    const { sheet, g } = readBook(wb0);
     const mm = sheet('Machine Master') || [];
     const skip = no => /^ตัวอย่าง|^example/i.test(no);
     const engOf = t => fdOfType(t === 'เครื่องทดสอบ' ? 'เครื่องทดสอบ' : 'เครื่องจักร');
@@ -2347,6 +2533,7 @@ function bind() {
   const live = (id, key) => { const el = $('#' + id); if (el) el.oninput = () => { S[key] = el.value; const pos = el.selectionStart; render(); const n = $('#' + id); n.focus(); n.setSelectionRange(pos, pos); }; };
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq'); live('vq', 'vq');
   $$('#expReq').forEach(b => b.onclick = exportRequests);
+  $$('[data-planx]').forEach(b => b.onclick = () => exportPlan(Number(b.dataset.planx)));
   $('#mAdd') && ($('#mAdd').onclick = () => machineForm(null));
   $('#mImport') && ($('#mImport').onchange = e => { const f = e.target.files[0]; if (f) importExcel(f); e.target.value = ''; });
   $('#dAdd') && ($('#dAdd').onclick = docForm);

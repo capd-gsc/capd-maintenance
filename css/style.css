@@ -727,3 +727,23 @@ details.more .mi.bad-t{color:var(--bad)}
   .tag-sheet.paper-a4{display:grid;grid-template-columns:repeat(2,70mm);gap:3mm 6mm;justify-content:center}
   .tag{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* ===================== นำเข้าแผน PM / CAL รูปแบบเดิม ===================== */
+.pl-sum{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}
+.pl-sum div{background:var(--panel-2);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}
+.pl-sum b{font-size:22px;line-height:1.1}
+.pl-sum span{font-size:12px;color:var(--muted)}
+.pl-sum .w b{color:#b7791f}.pl-sum .x b{color:var(--muted)}
+.pl-box{border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:8px 0}
+.pl-box summary{cursor:pointer;font-size:13.5px}
+.pl-ini{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:8px}
+.pl-ini label{display:flex;align-items:center;gap:8px;font-size:13px}
+.pl-ini b{min-width:38px}
+.pl-ini select,.pl-opt select{flex:1;min-width:0;font:inherit;font-size:13px;padding:5px 7px;border:1px solid var(--line-2);border-radius:8px;background:var(--bg);color:var(--ink)}
+.pl-opt{display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}
+.pl-opt label{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:600;color:var(--muted);flex:1;min-width:200px}
+.pl-tbl{max-height:46vh;overflow:auto}
+.pl-tbl td{vertical-align:top;font-size:13px}
+.pl-tbl input[type=date]{font:inherit;font-size:12.5px;padding:3px 5px;border:1px solid var(--line-2);border-radius:6px;background:var(--bg);color:var(--ink);margin-top:3px}
+.pl-skip{margin:6px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);max-height:160px;overflow:auto}
+@media (max-width:820px){.pl-sum{grid-template-columns:repeat(2,1fr)}}
