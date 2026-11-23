@@ -1843,7 +1843,7 @@ function printQR(list) {
 }
 
 // เมนู ⋯ ของหน้า PM / CAL (ทุกมุมมอง): Export แผนรูปแบบเดิม + นำเข้าแผน
-const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<label class="mi" for="mImport">นำเข้าแผนจาก Excel (LAB EQUIP.PLAN)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
+const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<button class="mi" id="pfForm">แบบฟอร์มกรอกวันที่ PM / CAL (Excel)</button>' : '', isAdmin() ? '<label class="mi" for="mImport">นำเข้า Excel (แบบฟอร์มกรอกวันที่ / แผนเดิม)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
 /* ---------- PM / CAL Tag: สติกเกอร์ 7 × 4 ซม. ---------- */
 const dmy = d => d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : '';
 const TAG_DOC = { PM: '', CAL: 'CP-F-064' };
@@ -2196,10 +2196,91 @@ async function exportPlan(year) {
   } catch (e) { fail(e); }
 }
 
+/* ---------- แบบฟอร์มกรอกวันที่ PM / CAL: Export ให้ผู้รับผิดชอบกรอก → นำเข้ากลับ ---------- */
+const FORM_SHEET = 'กรอกวันที่ PM-CAL';
+const formPlans = () => D.machines.filter(m => m.status !== 'Inactive').flatMap(m => [['PM', m.pm_last_date, m.pm_interval_month], ['CAL', m.cal_last_date, m.cal_interval_month]].filter(x => x[2]).map(([kind, last, iv]) => ({ m, kind, last, iv })))
+  .sort((a, b) => nm(a.m.responsibility || '').localeCompare(nm(b.m.responsibility || ''), 'th') || a.m.machine_no.localeCompare(b.m.machine_no) || a.kind.localeCompare(b.kind));
+async function exportForm() {
+  try {
+    if (typeof ExcelJS === 'undefined') await loadJs('https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js');
+    const rows = formPlans(); if (!rows.length) return toast('ยังไม่มีเครื่องที่มีรอบ PM / CAL');
+    const wb = new ExcelJS.Workbook(), fill = c => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: c } });
+    const thin = { style: 'thin', color: { argb: 'FFB7C4BF' } }, border = { top: thin, left: thin, bottom: thin, right: thin };
+    const hw = wb.addWorksheet('วิธีกรอก'); hw.getColumn(1).width = 110;
+    [['แบบฟอร์มกรอกวันที่ PM / CAL · ' + C.APP_NAME, { bold: true, size: 14 }], ['สร้างเมื่อ ' + dmy(todayIso()) + ' · ' + rows.length + ' แผน · ยังไม่มีวันที่ ' + rows.filter(r => !r.last).length + ' แผน (ช่องสีเหลือง)', { color: { argb: 'FF555555' } }], ['', {}],
+      ['1. ไปที่ชีท “' + FORM_SHEET + '” แล้วกดลูกศรที่หัวคอลัมน์ “ผู้รับผิดชอบ” เลือกชื่อตัวเอง', {}],
+      ['2. กรอกคอลัมน์สีเขียว “วันที่ทำล่าสุด (กรอก)” เป็นวัน/เดือน/ปี ค.ศ. เช่น 15/03/2026 · ดูจาก Certificate CAL, รายงาน PM หรือ Tag ที่เครื่อง', {}],
+      ['3. ถ้ารอบไม่ถูก แก้คอลัมน์ “รอบ (เดือน)” ได้ · มีอะไรเพิ่มเติมเขียนในคอลัมน์ “หมายเหตุ”', {}],
+      ['4. ไม่รู้วันที่ ปล่อยว่างไว้ · ห้ามเพิ่ม ลบ หรือสลับคอลัมน์ · แก้ได้เฉพาะคอลัมน์สีเขียว', {}],
+      ['5. บันทึกไฟล์แล้วส่งกลับให้ Admin · Admin นำเข้าที่หน้า PM / CAL → ⋯ → นำเข้า Excel (ส่งไฟล์แยกคนละไฟล์ได้ นำเข้าทีละไฟล์)', {}]].forEach(([t, f], i) => { const c = hw.getCell(i + 1, 1); c.value = t; c.font = f; c.alignment = { wrapText: true }; });
+    const ws = wb.addWorksheet(FORM_SHEET, { views: [{ state: 'frozen', xSplit: 2, ySplit: 1 }] });
+    const cols = [['Machine number', 16], ['ชื่อเครื่อง', 36], ['Location', 20], ['งาน', 7], ['รอบ (เดือน)', 10], ['วันที่ทำล่าสุด (ในระบบ)', 14], ['วันที่ทำล่าสุด (กรอก)', 16], ['ครบกำหนดถัดไป', 14], ['ผู้รับผิดชอบ', 22], ['Vendor', 22], ['หมายเหตุ', 30]];
+    cols.forEach(([h, w], i) => { ws.getColumn(i + 1).width = w; const c = ws.getCell(1, i + 1); c.value = h; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill([4, 6, 10].includes(i) ? 'FF2E7D4F' : 'FF2F4A43'); c.alignment = { wrapText: true, vertical: 'middle' }; c.border = border; });
+    ws.getRow(1).height = 32;
+    rows.forEach((r, k) => {
+      const row = ws.getRow(k + 2), n = k + 2;
+      const v = [r.m.machine_no, r.m.machine_name || '', r.m.location || '', r.kind, r.iv, r.last ? new Date(r.last + 'T00:00:00Z') : null, null, { formula: `IF(G${n}<>"",EDATE(G${n},E${n}),IF(F${n}<>"",EDATE(F${n},E${n}),""))` }, r.m.responsibility ? nm(r.m.responsibility) : '(ยังไม่ระบุ)', r.m.supplier || '', ''];
+      v.forEach((x, i) => { const c = row.getCell(i + 1); c.value = x; c.border = border; c.alignment = { vertical: 'middle', wrapText: i === 1 }; });
+      [6, 7, 8].forEach(i => row.getCell(i).numFmt = 'dd/mm/yyyy');
+      [5, 7, 11].forEach(i => { row.getCell(i).fill = fill(i === 7 && !r.last ? 'FFFFF2B3' : 'FFE6F4EA'); row.getCell(i).protection = { locked: false }; });
+      row.getCell(7).dataValidation = { type: 'date', operator: 'between', allowBlank: true, formulae: [new Date(Date.UTC(2015, 0, 1)), new Date(Date.UTC(2035, 11, 31))], showErrorMessage: true, errorTitle: 'วันที่ไม่ถูกต้อง', error: 'กรอกเป็นวันที่ เช่น 15/03/2026' };
+      row.getCell(5).dataValidation = { type: 'whole', operator: 'between', allowBlank: false, formulae: [1, 120], showErrorMessage: true, error: 'รอบเป็นจำนวนเดือน 1–120' };
+    });
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: rows.length + 1, column: cols.length } };
+    await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, autoFilter: true, sort: true, formatColumns: true });
+    const buf = await wb.xlsx.writeBuffer();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })); a.download = `CAPD-PMCAL-Dates-${todayIso()}.xlsx`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    toast(`สร้างแบบฟอร์มแล้ว ${rows.length} แผน · ยังไม่มีวันที่ ${rows.filter(r => !r.last).length}`);
+  } catch (e) { fail(e); }
+}
+function parseForm(rows, g) {
+  const out = [], bad = [];
+  for (const r of rows) {
+    const no = String(g(r, 'machine number') || '').trim(), kind = String(g(r, 'งาน') || '').trim().toUpperCase();
+    if (!no || !['PM', 'CAL'].includes(kind)) continue;
+    const m = D.machines.find(x => x.machine_no === no); if (!m) { bad.push(`${no}: ไม่พบเครื่องในระบบ`); continue; }
+    const rawD = r['วันที่ทำล่าสุด (กรอก)'], d = rawD instanceof Date ? xDate(rawD) : rawD != null && rawD !== '' ? planDate(rawD) || (typeof rawD === 'number' ? xDate(rawD) : null) : null;
+    const ivIn = parseInt(g(r, 'รอบ (เดือน)')), old = kind === 'PM' ? m.pm_last_date : m.cal_last_date, oldIv = kind === 'PM' ? m.pm_interval_month : m.cal_interval_month;
+    const note = g(r, 'หมายเหตุ');
+    if (rawD != null && rawD !== '' && !d) { bad.push(`${no} ${kind}: อ่านวันที่ “${rawD}” ไม่ได้`); continue; }
+    if (d && d > todayIso()) { bad.push(`${no} ${kind}: วันที่ ${dmy(d)} อยู่ในอนาคต`); continue; }
+    const ivChange = ivIn > 0 && ivIn !== oldIv ? ivIn : null;
+    if (!d && !ivChange) continue;
+    out.push({ m, kind, d, old, older: d && old && d < old, same: d && d === old, iv: ivChange, oldIv, note });
+  }
+  return { out: out.filter(x => !(x.same && !x.iv)), bad };
+}
+function formReview(F, fileName) {
+  const use = new Set(F.out.map((x, i) => i).filter(i => !F.out[i].older));
+  modal(`<div class="h-row" style="margin:0 0 6px"><h2 style="margin:0;flex:1">นำเข้าแบบฟอร์มกรอกวันที่ PM / CAL</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
+    <p class="sub" style="margin-top:0">${esc(fileName)} · พบการเปลี่ยนแปลง ${F.out.length} แผน${F.bad.length ? ` · ข้าม ${F.bad.length} แถว` : ''}</p>
+    ${F.out.length ? `<div class="tbl-wrap pl-tbl"><table><thead><tr><th><input type="checkbox" id="fmAll" aria-label="เลือกทั้งหมด" checked></th><th>Machine</th><th>งาน</th><th>วันที่ทำล่าสุด</th><th>รอบ</th><th>ผู้รับผิดชอบ</th><th>หมายเหตุ</th></tr></thead><tbody>
+      ${F.out.map((x, i) => `<tr><td><input type="checkbox" class="fm-on" data-i="${i}" ${use.has(i) ? 'checked' : ''}></td><td><b class="mono">${esc(x.m.machine_no)}</b><br><span class="sub">${esc(x.m.machine_name || '')}</span></td><td>${x.kind}</td>
+        <td>${x.d ? `${x.old ? `<span class="sub">${dmy(x.old)} →</span> ` : ''}<b>${dmy(x.d)}</b>${x.older ? ' <span class="pill s-wait" title="เก่ากว่าวันที่ในระบบ ติ๊กเลือกถ้าต้องการแก้ให้ย้อนกลับ">เก่ากว่าในระบบ</span>' : ''}${!x.old ? ' <span class="pill s-confirm">ใหม่</span>' : ''}` : '<span class="sub">-</span>'}</td>
+        <td>${x.iv ? `<span class="sub">${x.oldIv || '-'} →</span> <b>${x.iv} เดือน</b>` : `<span class="sub">${x.oldIv} เดือน</span>`}</td><td>${esc(nm(x.m.responsibility))}</td><td class="sub">${esc(x.note || '')}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ไม่มีวันที่หรือรอบที่เปลี่ยนจากในระบบ</div>'}
+    ${F.bad.length ? `<details class="pl-box" open><summary>แถวที่ข้าม (${F.bad.length})</summary><ul class="pl-skip">${F.bad.map(b => `<li>${esc(b)}</li>`).join('')}</ul></details>` : ''}
+    ${F.out.length ? `<div class="btns" style="margin-top:12px"><button class="btn" id="fmGo">บันทึก <span id="fmN">${use.size}</span> แผน</button><span class="sub">แผนที่วันที่เก่ากว่าในระบบไม่ถูกเลือกไว้ ติ๊กเองถ้าต้องการแก้ย้อนกลับ</span></div>` : ''}`, 'wide');
+  const n = () => { const e = $('#fmN'); if (e) e.textContent = use.size; };
+  $$('.fm-on').forEach(c => c.onchange = () => { c.checked ? use.add(+c.dataset.i) : use.delete(+c.dataset.i); n(); });
+  $('#fmAll') && ($('#fmAll').onchange = e => $$('.fm-on').forEach(c => { c.checked = e.target.checked; c.onchange(); }));
+  $('#fmGo') && ($('#fmGo').onclick = async () => {
+    const go = $('#fmGo'); go.disabled = true;
+    try {
+      const per = {};
+      [...use].map(i => F.out[i]).forEach(x => { const u = per[x.m.machine_no] ||= {}; const k = x.kind === 'PM' ? 'pm' : 'cal'; if (x.d) u[k + '_last_date'] = x.d; if (x.iv) u[k + '_interval_month'] = x.iv; });
+      for (const [no, u] of Object.entries(per)) { const { error } = await sb.from('machines').update({ ...u, updated_at: new Date().toISOString() }).eq('machine_no', no); if (error) throw error; }
+      let created = 0; try { const { data } = await sb.rpc('ensure_pmcal_jobs'); created = data || 0; } catch (e) {}
+      closeModal(); toast(`บันทึกวันที่ PM / CAL ${use.size} แผน (${Object.keys(per).length} เครื่อง)` + (created ? ` · เปิดใบงาน PM/CAL ใหม่ ${created}` : '')); reload();
+    } catch (e) { go.disabled = false; fail(e); }
+  });
+}
+
 async function importExcel(file) {
   try {
     const wb0 = XLSX.read(await file.arrayBuffer(), { cellDates: true, cellStyles: true });
     const pn = Object.keys(wb0.Sheets).find(n => n.trim().toUpperCase() === PLAN_SHEET);
+    const fn = Object.keys(wb0.Sheets).find(n => n.trim() === FORM_SHEET);
+    if (fn) { const { sheet: sh2, g: g2 } = readBook(wb0); const F = parseForm(sh2(FORM_SHEET) || [], g2); return formReview(F, file.name); }
     if (pn) { const P = parsePlanSheet(wb0.Sheets[pn]); if (!P) return toast('อ่านหัวตารางในชีท ' + PLAN_SHEET + ' ไม่ได้ (ต้องมีคอลัมน์ Machine number, Activity, Jan–Dec)'); return planReview(P, file.name); }
     const { sheet, g } = readBook(wb0);
     const mm = sheet('Machine Master') || [];
@@ -2550,6 +2631,7 @@ function bind() {
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq'); live('vq', 'vq');
   $$('#expReq').forEach(b => b.onclick = exportRequests);
   $$('[data-planx]').forEach(b => b.onclick = () => exportPlan(Number(b.dataset.planx)));
+  $('#pfForm') && ($('#pfForm').onclick = exportForm);
   $('#mAdd') && ($('#mAdd').onclick = () => machineForm(null));
   $('#mImport') && ($('#mImport').onchange = e => { const f = e.target.files[0]; if (f) importExcel(f); e.target.value = ''; });
   $('#dAdd') && ($('#dAdd').onclick = docForm);
