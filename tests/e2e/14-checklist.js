@@ -36,6 +36,14 @@ r=await Q('insert','checklist_runs',{machine_no:machine,results:[]},[],OP);ok(!!
 r=await Q('delete','checklist_runs',null,[['id',run.id]],OP);ok((await one('select count(*)::int n from checklist_runs where id=$1',[run.id])).n===1,'operator cannot delete a result');
 r=await Q('delete','checklist_runs',null,[['id',run.id]],admin);ok((await one('select count(*)::int n from checklist_runs where id=$1',[run.id])).n===0,'admin can delete a result');
 r=await Q('insert','checklist_runs',{machine_no:machine,results:res},[],'outsider@scg.com');ok(!!r.error,'unknown user cannot record');
+// --- floor plans: everyone reads, only admin edits ---
+r=await Q('insert','floor_plans',{id:'plan-x',name:'X',image_path:'plans/x.jpg'},[],OP);ok(!!r.error,'operator cannot add a floor plan');
+r=await Q('insert','floor_plans',{id:'plan-x',name:'X',image_path:'plans/x.jpg'},[],admin);ok(!r.error,'admin adds a floor plan');
+r=await Q('insert','floor_plans',{id:'plan-y',name:'Y',image_path:'other/x.jpg'},[],admin);ok(!!r.error,'plan image must live under plans/');
+r=await Q('select','floor_plans',null,[],OP);ok(!r.error&&r.data.length===1,'operator reads floor plans');
+r=await Q('update','machines',{map_plan:'plan-x',map_x:0.5,map_y:0.25},[['machine_no',machine]],admin);ok(!r.error,'admin pins a machine');
+r=await Q('update','machines',{map_x:2},[['machine_no',machine]],admin);ok(!!r.error,'pin position must be inside the plan (0–1)');
+await Q('delete','floor_plans',null,[['id','plan-x']],admin);ok((await one('select map_plan from machines where machine_no=$1',[machine])).map_plan===null,'deleting a plan clears its pins');
 
 // --- UI: operator checks a machine ---
 await p.goto(env.url);await W(400);

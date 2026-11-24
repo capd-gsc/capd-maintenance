@@ -31,11 +31,11 @@ create or replace function public.capd_apply_trial(p_on boolean) returns text
 language plpgsql security definer set search_path = public as $$
 declare
   p record;
-  tabs text[] := array['app_users','machines','requests','request_logs','documents','spare_parts','part_tx','vendors','machine_photos','checklist_templates','checklist_runs'];
+  tabs text[] := array['app_users','machines','requests','request_logs','documents','spare_parts','part_tx','vendors','machine_photos','checklist_templates','checklist_runs','floor_plans'];
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where (schemaname = 'public' and tablename = any(tabs))
-              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload')) loop
+              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload')) loop
     execute format('alter policy %I on %I.%I to %s', p.policyname, p.schemaname, p.tablename, case when p_on then 'anon, authenticated' else 'authenticated' end);
   end loop;
   if p_on then
@@ -43,10 +43,11 @@ begin
     grant select, insert on public.part_tx to anon;
     grant select, insert, update, delete on public.checklist_templates to anon;
     grant select, insert, delete on public.checklist_runs to anon;
+    grant select, insert, update, delete on public.floor_plans to anon;
     grant usage, select on all sequences in schema public to anon;
     grant execute on function public.ensure_pmcal_jobs() to anon;
   else
-    revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs from anon;
+    revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs, public.floor_plans from anon;
     revoke usage, select on all sequences in schema public from anon;
     revoke execute on function public.ensure_pmcal_jobs() from anon;
   end if;

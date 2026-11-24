@@ -41,6 +41,7 @@ const MSPECIAL = ['เป็นงานเฉพาะต้องการค�
 
 const LOGO = '<svg width="30" height="30" viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="3" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M9 21l5-5 3 3 6-8" fill="none" stroke="#f39a1e" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="23" cy="11" r="2.3" fill="#f39a1e"/></svg>';
 const IC = {
+  map: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>',
   parts: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg>',
   qr: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/></svg>',
   more: '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h16"/></svg>',
@@ -178,6 +179,7 @@ async function loadAll() {
   const mp = await sb.from('machine_photos').select('*').order('created_at'); D.mphotos = mp.error ? [] : mp.data; D.hasMPhotos = !mp.error;
   // ตรวจก่อนใช้งานประจำวัน: แบบฟอร์ม + ผลตรวจ 60 วันล่าสุด
   const ct = await sb.from('checklist_templates').select('*').order('name'); D.hasChecklist = !ct.error; D.ckTpl = ct.error ? [] : ct.data;
+  const fp = await sb.from('floor_plans').select('*').order('sort'); D.hasMap = !fp.error; D.plans = fp.error ? [] : fp.data;
   if (D.hasChecklist) { const d0 = new Date(); d0.setDate(d0.getDate() - 60); const cr = await sb.from('checklist_runs').select('*').gte('run_date', d0.toISOString().slice(0, 10)).order('created_at', { ascending: false }); D.ckRuns = cr.error ? [] : cr.data; } else D.ckRuns = [];
   // ประวัติทุกใบงาน (หน้า Flow / รายงาน) โหลดเมื่อเปิดหน้านั้นครั้งแรก แล้วรีเฟรชพร้อมข้อมูลอื่น
   if (D.logsAll) { const lg = await sb.from('request_logs').select('request_id, at, action, actor').order('at'); if (!lg.error) D.logsAll = lg.data || []; }
@@ -217,18 +219,18 @@ function myReminders() {
 }
 
 /* ---------- files ---------- */
-function shrink(file) {
+function shrink(file, max = 1600) {
   return new Promise(res => {
     const r = new FileReader();
-    r.onload = () => { const img = new Image(); img.onload = () => { const s = Math.min(1, 1600 / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); c.toBlob(b => res(b), 'image/jpeg', 0.82); }; img.onerror = () => res(null); img.src = r.result; };
+    r.onload = () => { const img = new Image(); img.onload = () => { const s = Math.min(1, max / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); c.toBlob(b => res(b), 'image/jpeg', 0.82); }; img.onerror = () => res(null); img.src = r.result; };
     r.readAsDataURL(file);
   });
 }
-async function uploadFiles(prefix, kind, files) {
+async function uploadFiles(prefix, kind, files, max) {
   const out = [];
   for (const [i, f] of [...(files || [])].entries()) {
     const isImg = /^image\//.test(f.type);
-    const body = isImg ? (await shrink(f)) || f : f;
+    const body = isImg ? (await shrink(f, max)) || f : f;
     const name = isImg ? f.name.replace(/\.[^.]+$/, '') + '.jpg' : f.name;
     const path = `${prefix}/${kind}-${Date.now()}-${i}-${name.replace(/[^\w.\-]+/g, '_')}`;
     const { error } = await sb.storage.from('request-photos').upload(path, body, { contentType: isImg ? 'image/jpeg' : (f.type || 'application/octet-stream') });
@@ -322,13 +324,13 @@ async function enter(session) {
 }
 
 /* =================== SHELL =================== */
-const NAV_ICON = { checks: 'approve', home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
+const NAV_ICON = { map: 'map', checks: 'approve', home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
 // เมนู: งานประจำวันบน ข้อมูลอ้างอิงล่าง · "แจ้งซ่อม" เป็นปุ่ม · อนุมัติรวมในหน้าหลัก · Flow รวมในใบงาน
 function navGroups() {
-  if (isOp()) return [['ตรวจเครื่อง', [['home', 'หน้าหลัก']]]];
+  if (isOp()) return [['ตรวจเครื่อง', [['home', 'หน้าหลัก'], ...(D.hasMap ? [['map', 'แผนผังเครื่อง']] : [])]]];
   return [
     ['งาน', [['home', 'หน้าหลัก', myTasks().length], ['list', 'ใบงาน'], ['cal', 'PM / CAL', myReminders().length]]],
-    ['เครื่องและอะไหล่', [['machine', 'เครื่องจักร'], ...(D.hasChecklist ? [['checks', 'ตรวจประจำวัน', isFD() ? ckNgToday() : 0]] : []), ['parts', 'อะไหล่', canParts() ? lowParts().length : 0]]],
+    ['เครื่องและอะไหล่', [['machine', 'เครื่องจักร'], ...(D.hasChecklist ? [['checks', 'ตรวจประจำวัน', isFD() ? ckNgToday() : 0]] : []), ...(D.hasMap ? [['map', 'แผนผังเครื่อง']] : []), ['parts', 'อะไหล่', canParts() ? lowParts().length : 0]]],
     ['ข้อมูล', [['docs', 'คลังเอกสาร'], ['report', 'รายงาน']]]
   ];
 }
@@ -337,13 +339,13 @@ function navItems() {
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้และสิทธิ์']);
   return nav;
 }
-const CRUMBS = { checks: 'ตรวจเครื่องประจำวัน', vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+const CRUMBS = { map: 'แผนผังเครื่อง', checks: 'ตรวจเครื่องประจำวัน', vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
 const navOn = k => S.view === k || (['detail', 'flow'].includes(S.view) && k === 'list') || (S.view === 'approve' && k === 'home') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
-  if (isOp() && !['home', 'scan'].includes(S.view)) S.view = 'home';
+  if (isOp() && !['home', 'scan', 'map'].includes(S.view)) S.view = 'home';
   dirty = false; lastSync = Date.now();
-  const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list'].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
+  const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list', ...(isOp() ? ['map'] : [])].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
   const sub = S.view === 'detail' ? S.sel : S.view === 'scan' ? S.scanNo : esc(roleText(S.me));
   const back = ['detail', 'scan'].includes(S.view);
   $('#app').innerHTML = `
@@ -368,9 +370,9 @@ function render() {
       <main class="main" id="main">${VIEWS[S.view]()}</main>
     </div>
   </div>
-  <nav class="bnav ${isOp() ? 'op' : ''}" aria-label="เมนูหลัก">
+  <nav class="bnav ${isOp() ? (D.hasMap ? 'op op4' : 'op') : ''}" aria-label="เมนูหลัก">
     <button data-nav="home" class="${navOn('home') ? 'on' : ''}">${IC.home}<span>หน้าหลัก</span>${myTasks().length ? `<i class="badge">${myTasks().length}</i>` : ''}</button>
-    ${isOp() ? '' : `<button data-nav="new" class="${navOn('new') ? 'on' : ''}">${IC.new}<span>แจ้งซ่อม</span></button>`}
+    ${isOp() ? (D.hasMap ? `<button data-nav="map" class="${navOn('map') ? 'on' : ''}">${IC.map}<span>แผนผัง</span></button>` : '') : `<button data-nav="new" class="${navOn('new') ? 'on' : ''}">${IC.new}<span>แจ้งซ่อม</span></button>`}
     <button data-scanqr class="fabw" aria-label="สแกน QR ที่เครื่อง"><span class="fab">${IC.qr}</span><span>สแกน</span></button>
     ${isOp() ? '' : `<button data-nav="list" class="${navOn('list') ? 'on' : ''}">${IC.list}<span>ใบงาน</span></button>`}
     <button id="moreBtn" class="${more.some(([k]) => navOn(k)) ? 'on' : ''}">${IC.more}<span>เมนู</span>${moreBadge ? `<i class="badge">${moreBadge}</i>` : ''}</button>
@@ -634,6 +636,7 @@ const VIEWS = {
   },
 
   checks() { return ckPage(); },
+  map() { return mapPage(); },
   docs() {
     const kinds = ['all', ...new Set(D.docs.map(d => d.kind))];
     let rows = D.docs;
@@ -1936,7 +1939,7 @@ function ckView(id) {
 function ckBox() {
   if (!D.hasChecklist) return ''; const ms = ckMachines(); if (!ms.length) return '';
   const done = ms.filter(m => ckToday(m.machine_no)), ng = done.filter(m => ckToday(m.machine_no).ng_count).length;
-  return `<section class="box ck-box"><h3>ตรวจก่อนใช้งานวันนี้</h3><div class="ck-sum"><b data-count="${done.length}">${done.length}</b><span>/ ${ms.length} เครื่อง</span>${ng ? `<span class="pill s-rej">NG ${ng} เครื่อง</span>` : ''}</div><button class="btn ghost sm" data-nav="checks">ดูรายละเอียด</button></section>`;
+  return `<section class="box ck-box"><h3>ตรวจก่อนใช้งานวันนี้</h3><div class="ck-sum"><b data-count="${done.length}">${done.length}</b><span>/ ${ms.length} เครื่อง</span>${ng ? `<span class="pill s-rej">NG ${ng} เครื่อง</span>` : ''}</div><div class="btns"><button class="btn ghost sm" data-nav="checks">ดูรายละเอียด</button>${D.hasMap && D.plans.length ? `<button class="btn ghost sm" data-nav="map">${IC.map}<span>ดูบนแผนผัง</span></button>` : ''}</div></section>`;
 }
 function ckPage() {
   if (!D.hasChecklist) return `<div class="h-row"><h1>ตรวจเครื่องประจำวัน</h1></div><div class="empty">ยังไม่ได้เปิดใช้ · Admin รัน supabase/install.sql ใน Supabase</div>`;
@@ -2026,6 +2029,7 @@ function opHome() {
   const done = ms.filter(m => ckToday(m.machine_no)).length, mine = (D.ckRuns || []).filter(r => r.actor === S.me.email && r.run_date === todayIso()).length;
   return `<div class="hello"><h1>สวัสดี, ${esc(String(S.me.full_name || S.me.email).split(' ')[0])}</h1><span class="sub">ผู้ใช้เครื่อง · วันนี้คุณตรวจแล้ว ${mine} เครื่อง</span></div>
     <button class="ck-scan" data-scanqr>${IC.qr}<span><b>สแกน QR ที่เครื่อง</b><small>เพื่อตรวจก่อนใช้งานวันนี้</small></span></button>
+    ${D.hasMap && D.plans.length ? `<button class="btn ghost op-map" data-nav="map">${IC.map}<span>ดูแผนผัง: เครื่องไหนยังไม่ได้ตรวจ</span></button>` : ''}
     <h3 class="sec">เครื่องที่ต้องตรวจวันนี้ <span class="sub">ตรวจแล้ว ${done} / ${ms.length}</span></h3>
     ${ms.length ? `<div class="fbar"><label class="sr" for="ckq">ค้นหาเครื่อง</label><input id="ckq" class="search" placeholder="ค้นหาเครื่อง" value="${esc(S.ckq || '')}"></div>
     <div class="ck-mlist">${ms.map(m => { const r = ckToday(m.machine_no); return `<button class="ck-m" data-q="${ckQ(m)}" ${r ? `data-ckview="${r.id}"` : `data-ck="${esc(m.machine_no)}"`}><span class="ck-mn"><b class="mono">${esc(m.machine_no)}</b> ${esc(m.machine_name || '')}<small>${esc(m.location || '')}${r ? ` · ${esc(nm(r.actor))} ${hhmm(r.created_at)} น.` : ''}</small></span>${ckStat(m)}</button>`; }).join('')}</div>` : '<div class="empty">ยังไม่มีเครื่องที่ต้องตรวจ · แจ้ง Admin ให้เลือกเครื่องในแบบฟอร์มตรวจ</div>'}`;
@@ -2036,6 +2040,99 @@ function opScan(m) {
     ${ph ? `<div class="minfo-ph op-ph">${imgTag(ph.path, 'รูปเครื่อง ' + m.machine_no)}</div>` : ''}
     <div class="mcard">${[['Location', m.location], ['Type', m.machine_type], ['Model', m.model]].filter(x => x[1]).map(([k, v]) => `<div><span>${k}</span>${esc(v)}</div>`).join('')}</div>
     ${ckOf(m) && m.status !== 'Inactive' ? ckCard(m) + `<h3 class="sec">ผลตรวจย้อนหลัง</h3>${ckHistory(m.machine_no)}` : '<div class="empty">เครื่องนี้ไม่ต้องตรวจก่อนใช้งานประจำวัน</div>'}`;
+}
+
+/* ---------- แผนผังโรงงาน: หมุดเครื่อง สีตามผลตรวจก่อนใช้งานวันนี้ ---------- */
+const PINTXT = { todo: 'ยังไม่ตรวจ', ng: 'พบ NG', ok: 'ตรวจแล้ว ปกติ', na: 'ไม่ต้องตรวจ' };
+const pinSt = m => { if (!ckOf(m)) return 'na'; const r = ckToday(m.machine_no); return !r ? 'todo' : r.ng_count ? 'ng' : 'ok'; };
+function mapPage() {
+  const head = extra => `<div class="h-row"><h1>แผนผังเครื่อง</h1>${extra || ''}</div>`;
+  if (!D.hasMap) return head() + '<div class="empty">ยังไม่ได้เปิดใช้ · Admin รัน supabase/install.sql ใน Supabase</div>';
+  if (!D.plans.length) return head() + `<div class="empty">ยังไม่มีผังโรงงาน${isAdmin() ? '<br><button class="btn" data-mpnew="1" style="margin-top:12px">+ เพิ่มผังแรก</button>' : ' · แจ้ง Admin ให้อัปโหลดรูปผัง'}</div>`;
+  const cur = D.plans.find(x => x.id === S.mapPlan) || D.plans[0]; S.mapPlan = cur.id;
+  const edit = !!S.mapEdit && isAdmin(), zoom = S.mapZoom || 1;
+  const ms = D.machines.filter(m => m.map_plan === cur.id && m.map_x != null && m.map_y != null && m.status !== 'Inactive');
+  const cnt = k => ms.filter(m => pinSt(m) === k).length;
+  const show = ms.filter(m => edit || !S.mapTodo || ['todo', 'ng'].includes(pinSt(m)));
+  const pins = show.map(m => { const k = pinSt(m); return `<button class="pin p-${k} ${S.mapPick === m.machine_no ? 'picked' : ''}" style="left:${(m.map_x * 100).toFixed(2)}%;top:${(m.map_y * 100).toFixed(2)}%" data-pin="${esc(m.machine_no)}" title="${esc(m.machine_no + ' · ' + (m.machine_name || '') + ' · ' + PINTXT[k])}" aria-label="${esc(m.machine_no)} ${PINTXT[k]}"><i></i><span>${esc(m.machine_no)}</span></button>`; }).join('');
+  const others = D.machines.filter(m => m.status !== 'Inactive' && !(m.map_plan === cur.id && m.map_x != null));
+  const pick = S.mapPick ? M(S.mapPick) : null;
+  const editBar = edit ? `<div class="map-edit">
+      <div class="map-ed1"><b>ปักหมุด</b><span class="sub">${pick ? `เลือก <b class="mono">${esc(pick.machine_no)}</b> แล้ว · คลิกจุดบนผังเพื่อวาง` : 'เลือกเครื่องจากรายการ หรือคลิกหมุดบนผังเพื่อย้าย แล้วคลิกจุดบนผัง'}</span>
+        ${pick && pick.map_plan === cur.id && pick.map_x != null ? `<button class="btn ghost sm bad-t" data-pinrm="${esc(pick.machine_no)}">เอาหมุดออก</button>` : ''}${pick ? '<button class="btn ghost sm" data-pinpick="">ยกเลิก</button>' : ''}</div>
+      <label class="sr" for="mapQ">ค้นหาเครื่อง</label><input id="mapQ" class="search" placeholder="ค้นหาเครื่องที่ยังไม่ได้ปักบนผังนี้ (${others.length})">
+      <div class="map-list">${others.map(m => `<button class="${S.mapPick === m.machine_no ? 'on' : ''}" data-pinpick="${esc(m.machine_no)}" data-q="${ckQ(m)}"><b class="mono">${esc(m.machine_no)}</b> ${esc(m.machine_name || '')}${m.map_plan ? ` <span class="sub">(อยู่ผัง ${esc((D.plans.find(x => x.id === m.map_plan) || {}).name || '')})</span>` : ''}</button>`).join('')}</div>
+    </div>` : '';
+  return head(`<span class="sp"></span>${isAdmin() ? `<button class="btn ${edit ? '' : 'ghost'}" data-mapedit="1">${edit ? 'เสร็จสิ้น' : 'แก้ไขผัง / ปักหมุด'}</button>${moreMenu([`<button class="mi" data-mpset="${esc(cur.id)}">ตั้งค่าผังนี้ (ชื่อ / รูป)</button>`, '<button class="mi" data-mpnew="1">+ เพิ่มผังใหม่</button>'])}` : ''}`) + `
+    ${D.plans.length > 1 ? `<div class="map-plans" role="tablist">${D.plans.map(x => `<button role="tab" aria-selected="${x.id === cur.id}" class="${x.id === cur.id ? 'on' : ''}" data-plan="${esc(x.id)}">${esc(x.name)}<span class="tn">${D.machines.filter(m => m.map_plan === x.id && m.status !== 'Inactive' && pinSt(m) === 'todo').length || ''}</span></button>`).join('')}</div>` : ''}
+    <div class="map-bar"><span class="lg todo"><i></i>ยังไม่ตรวจ <b>${cnt('todo')}</b></span><span class="lg ng"><i></i>พบ NG <b>${cnt('ng')}</b></span><span class="lg ok"><i></i>ปกติ <b>${cnt('ok')}</b></span><span class="lg na"><i></i>ไม่ต้องตรวจ <b>${cnt('na')}</b></span>
+      <label class="map-only"><input type="checkbox" id="mapTodo" ${S.mapTodo ? 'checked' : ''}> แสดงเฉพาะที่ต้องดู</label>
+      <span class="sp"></span><span class="map-zoom"><button class="iconbtn ghosty" data-mapzoom="-1" aria-label="ย่อ">−</button><span>${Math.round(zoom * 100)}%</span><button class="iconbtn ghosty" data-mapzoom="1" aria-label="ขยาย">+</button></span></div>
+    ${editBar}
+    <div class="map-wrap"><div class="map-cv ${edit ? 'edit' : ''} ${edit && pick ? 'placing' : ''}" id="mapCv" style="width:${zoom * 100}%">${cur.image_path ? imgTag(cur.image_path, 'ผัง ' + cur.name, 'map-img') : '<div class="map-noimg">ยังไม่มีรูปผัง · กด ⋯ → ตั้งค่าผังนี้ เพื่ออัปโหลด</div>'}${pins}</div></div>
+    <p class="sub">${edit ? 'ตำแหน่งบันทึกทันทีที่วางหมุด' : 'แตะหมุดเพื่อตรวจ หรือดูผลตรวจวันนี้ · หมุดที่กะพริบ = ยังไม่ได้ตรวจ'}</p>`;
+}
+function planForm(id) {
+  const x = id ? D.plans.find(p => p.id === id) : null;
+  modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">${x ? 'ตั้งค่าผัง' : 'เพิ่มผังใหม่'}</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
+    <div class="field"><label for="plName">ชื่อผัง</label><input id="plName" class="inp" value="${esc(x?.name || '')}" placeholder="เช่น ชั้น 1 · Extruder Area"></div>
+    <div class="field"><label for="plImg">รูปผังโรงงาน ${x?.image_path ? '(เลือกใหม่ถ้าจะเปลี่ยน · หมุดเดิมอยู่ตำแหน่งเดิมตามสัดส่วน)' : ''}</label><input id="plImg" type="file" accept="image/*"><span class="sub">ใช้รูป Layout จาก PDF / ภาพถ่าย / ภาพหน้าจอก็ได้ ระบบย่อเหลือด้านยาว 2,400 px</span></div>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="plGo2">บันทึก</button>${x ? '<button class="btn ghost bad-t" id="plDel">ลบผังนี้</button>' : ''}</div>`);
+  $('#plGo2').onclick = async () => {
+    const name = $('#plName').value.trim(), f = $('#plImg').files[0];
+    if (!name) return toast('ใส่ชื่อผัง'); if (!x && !f) return toast('เลือกรูปผัง');
+    $('#plGo2').disabled = true;
+    try {
+      const pid = x?.id || 'plan-' + Date.now().toString(36);
+      const up = f ? await uploadFiles('plans/' + pid, 'plan', [f], 2400) : [];
+      const row = { id: pid, name, sort: x ? x.sort : D.plans.length, updated_at: new Date().toISOString() }; if (up[0]) row.image_path = up[0].path;
+      const { error } = await sb.from('floor_plans').upsert(row); if (error) throw error;
+      S.mapPlan = pid; closeModal(); toast('บันทึกผังแล้ว'); reload();
+    } catch (e) { $('#plGo2').disabled = false; fail(e); }
+  };
+  $('#plDel') && ($('#plDel').onclick = async e => {
+    const b = e.currentTarget; if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ? (หมุดบนผังนี้จะหายไป)'; return; }
+    try {
+      for (const m of D.machines.filter(m => m.map_plan === x.id)) { const r = await sb.from('machines').update({ map_plan: null, map_x: null, map_y: null }).eq('machine_no', m.machine_no); if (r.error) throw r.error; }
+      const { error } = await sb.from('floor_plans').delete().eq('id', x.id); if (error) throw error;
+      S.mapPlan = null; closeModal(); toast('ลบผังแล้ว'); reload();
+    } catch (er) { fail(er); }
+  });
+}
+async function placePin(no, plan, x, y) {
+  const m = M(no); if (!m.machine_no) return;
+  const patch = plan ? { map_plan: plan, map_x: Math.round(x * 10000) / 10000, map_y: Math.round(y * 10000) / 10000 } : { map_plan: null, map_x: null, map_y: null };
+  Object.assign(m, patch); S.mapPick = null; render();
+  const { error } = await sb.from('machines').update(patch).eq('machine_no', no);
+  if (error) { fail(error); reload(); } else toast(plan ? `วาง ${no} แล้ว` : `เอา ${no} ออกจากผังแล้ว`);
+}
+function bindMap() {
+  if (S.view !== 'map') return;
+  $$('[data-plan]').forEach(b => b.onclick = () => { S.mapPlan = b.dataset.plan; S.mapPick = null; render(); });
+  $$('[data-mapedit]').forEach(b => b.onclick = () => { S.mapEdit = !S.mapEdit; S.mapPick = null; render(); });
+  $$('[data-mpnew]').forEach(b => b.onclick = () => planForm(null));
+  $$('[data-mpset]').forEach(b => b.onclick = () => planForm(b.dataset.mpset));
+  $$('[data-mapzoom]').forEach(b => b.onclick = () => { S.mapZoom = Math.min(3, Math.max(1, (S.mapZoom || 1) + 0.5 * Number(b.dataset.mapzoom))); render(); });
+  $('#mapTodo') && ($('#mapTodo').onchange = e => { S.mapTodo = e.target.checked; render(); });
+  $$('[data-pinpick]').forEach(b => b.onclick = () => { S.mapPick = b.dataset.pinpick || null; render(); });
+  $$('[data-pinrm]').forEach(b => b.onclick = () => placePin(b.dataset.pinrm, null));
+  $('#mapQ') && ($('#mapQ').oninput = e => { const k = e.target.value.trim().toLowerCase(); $$('.map-list [data-q]').forEach(el => el.hidden = !!k && !el.dataset.q.includes(k)); });
+  $$('[data-pin]').forEach(b => b.onclick = e => {
+    e.stopPropagation(); const no = b.dataset.pin;
+    if (S.mapEdit && isAdmin()) { S.mapPick = S.mapPick === no ? null : no; return render(); }
+    const k = pinSt(M(no));
+    if (k === 'todo') return ckForm(no);
+    if (k === 'ok' || k === 'ng') return ckView(ckToday(no).id);
+    openScan(no);
+  });
+  const cv = $('#mapCv');
+  if (cv) cv.onclick = e => {
+    if (!(S.mapEdit && isAdmin() && S.mapPick) || e.target.closest('[data-pin]')) return;
+    const img = cv.querySelector('.map-img'); if (!img) return toast('อัปโหลดรูปผังก่อน');
+    const r = img.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    placePin(S.mapPick, S.mapPlan, x, y);
+  };
 }
 
 // เมนู ⋯ ของหน้า PM / CAL (ทุกมุมมอง): Export แผนรูปแบบเดิม + นำเข้าแผน
@@ -2834,6 +2931,7 @@ function bind() {
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq'); live('vq', 'vq');
   $$('#expReq').forEach(b => b.onclick = exportRequests);
   $$('[data-planx]').forEach(b => b.onclick = () => exportPlan(Number(b.dataset.planx)));
+  bindMap();
   $$('[data-ck]').forEach(b => b.onclick = e => { e.preventDefault(); ckForm(b.dataset.ck); });
   $$('[data-ckview]').forEach(b => b.onclick = e => { e.preventDefault(); ckView(b.dataset.ckview); });
   $$('[data-cktpl]').forEach(b => b.onclick = () => ckTplEdit(b.dataset.cktpl));

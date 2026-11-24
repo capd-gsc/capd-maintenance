@@ -885,6 +885,34 @@ insert into public.checklist_templates(id, name, items) values
   {"t":"ป้ายพิกัดยก (SWL) และสติกเกอร์ Load test ยังไม่หมดอายุ","k":"ok"}]'::jsonb)
 on conflict (id) do nothing;
 
+-- ===== 08 floormap: ผังโรงงาน + ตำแหน่งเครื่องบนผัง (แสดงเครื่องที่ยังไม่ตรวจก่อนใช้งาน) =====
+create table if not exists public.floor_plans (
+  id          text primary key check (id ~ '^[a-z0-9_-]{1,40}$'),
+  name        text not null,
+  image_path  text check (image_path is null or image_path like 'plans/%'),
+  sort        int not null default 0,
+  updated_at  timestamptz not null default now()
+);
+-- ตำแหน่งบนผัง: สัดส่วน 0–1 ของความกว้าง / สูงของรูป (รูปเปลี่ยนขนาดได้ หมุดยังอยู่ที่เดิม)
+alter table public.machines add column if not exists map_plan text references public.floor_plans(id) on delete set null;
+alter table public.machines add column if not exists map_x real check (map_x is null or map_x between 0 and 1);
+alter table public.machines add column if not exists map_y real check (map_y is null or map_y between 0 and 1);
+
+alter table public.floor_plans enable row level security;
+drop policy if exists plan_read on public.floor_plans;
+drop policy if exists plan_write on public.floor_plans;
+create policy plan_read  on public.floor_plans for select to authenticated using (public.cur_any());
+create policy plan_write on public.floor_plans for all    to authenticated using (public.cur_admin()) with check (public.cur_admin());
+grant select, insert, update, delete on public.floor_plans to authenticated;
+
+-- รูปผัง: ทุกคนที่เข้าระบบได้ดูได้ (รวมผู้ใช้เครื่อง) · อัปโหลดได้เฉพาะ Admin
+drop policy if exists "checklist photos read" on storage.objects;
+create policy "checklist photos read" on storage.objects for select to authenticated
+  using (bucket_id = 'request-photos' and public.cur_any() and (name like 'checklists/%' or name like 'machines/%' or name like 'plans/%'));
+drop policy if exists "plan images upload" on storage.objects;
+create policy "plan images upload" on storage.objects for insert to authenticated
+  with check (bucket_id = 'request-photos' and public.cur_admin() and name like 'plans/%');
+
 -- ===== 09 finish: ลบของเก่าที่ไม่ใช้ · คงโหมดทดลองไว้ตามที่ตั้ง =====
 
 -- ---------- ของเก่าจากระบบรุ่นแรก (ผู้ใช้ย้ายไป app_users แล้ว) ----------
@@ -918,11 +946,11 @@ create or replace function public.capd_apply_trial(p_on boolean) returns text
 language plpgsql security definer set search_path = public as $$
 declare
   p record;
-  tabs text[] := array['app_users','machines','requests','request_logs','documents','spare_parts','part_tx','vendors','machine_photos','checklist_templates','checklist_runs'];
+  tabs text[] := array['app_users','machines','requests','request_logs','documents','spare_parts','part_tx','vendors','machine_photos','checklist_templates','checklist_runs','floor_plans'];
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where (schemaname = 'public' and tablename = any(tabs))
-              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload')) loop
+              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload')) loop
     execute format('alter policy %I on %I.%I to %s', p.policyname, p.schemaname, p.tablename, case when p_on then 'anon, authenticated' else 'authenticated' end);
   end loop;
   if p_on then
@@ -930,10 +958,11 @@ begin
     grant select, insert on public.part_tx to anon;
     grant select, insert, update, delete on public.checklist_templates to anon;
     grant select, insert, delete on public.checklist_runs to anon;
+    grant select, insert, update, delete on public.floor_plans to anon;
     grant usage, select on all sequences in schema public to anon;
     grant execute on function public.ensure_pmcal_jobs() to anon;
   else
-    revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs from anon;
+    revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs, public.floor_plans from anon;
     revoke usage, select on all sequences in schema public from anon;
     revoke execute on function public.ensure_pmcal_jobs() from anon;
   end if;
