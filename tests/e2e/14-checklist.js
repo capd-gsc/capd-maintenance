@@ -1,0 +1,57 @@
+// 14-checklist.js — daily pre-use machine checklist + the operator role — run through tests/run-all.js
+// Operators may only check machines: no jobs, parts or documents. The database sets who/when/NG count.
+const {chromium}=require('playwright');const fs=require('fs');const {Client}=require('pg');const env=require('../lib/env.js');
+(async()=>{const q=await require('../lib/bridge.js')();const db=new Client(env.pg);await db.connect();
+const row=async(s,a)=>(await db.query(s,a)).rows;const one=async(s,a)=>(await row(s,a))[0];
+const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:900}});require('../lib/reveal.js')(p);const errs=[];p.on('pageerror',e=>errs.push(e.message));
+await p.route('http://bridge.local/q',async r=>{const res=await q(JSON.parse(r.request().postData()));if(res.error)console.log('   [db refused]',res.error.message);r.fulfill({body:JSON.stringify(res),contentType:'application/json'})});
+await p.route('**/supabase.js',r=>r.fulfill({body:fs.readFileSync(env.client,'utf8'),contentType:'application/javascript'}));
+await p.route('**/xlsx.full.min.js',r=>r.fulfill({body:'',contentType:'application/javascript'}));
+await p.route('**/qrcode.js',r=>r.fulfill({body:fs.readFileSync(require.resolve('qrcode-generator/qrcode.js'),'utf8'),contentType:'application/javascript'}));
+await p.route('**fonts.googleapis.com/**',r=>r.fulfill({body:'',contentType:'text/css'}));
+const W=ms=>p.waitForTimeout(ms||500);const ok=(c,l)=>console.log((c?'PASS ':'FAIL ')+l);
+const U=n=>`user${String(n).padStart(2,'0')}@scg.com`;const H=e=>({'x-capd-user':e});
+const Q=(op,t,payload,f,e,extra)=>q({op,t,payload,f:f||[],order:[],email:'',headers:H(e),...(extra||{})});
+const admin=U(1),member=U(21),OP='operator1@scg.com';
+const machine=(await one("select machine_no from machines where status<>'Inactive' order by machine_no limit 1")).machine_no;
+await db.query("insert into app_users(email,full_name,role) values ($1,'Op One','operator') on conflict (email) do update set role='operator', active=true",[OP]);
+
+// --- seed templates came with install.sql ---
+ok((await one("select count(*)::int n from checklist_templates where id in ('general','extruder','testing','aircon','hoist')")).n===5,'5 sample forms installed');
+// --- template rules ---
+let r=await Q('update','checklist_templates',{name:'x'},[['id','general']],member);ok(!!r.error||r._noop||(await one("select name from checklist_templates where id='general'")).name!=='x','member cannot edit forms');
+r=await Q('update','machines',{checklist_template:'general'},[['machine_no',machine]],admin);ok(!r.error&&(await one('select checklist_template from machines where machine_no=$1',[machine])).checklist_template==='general','admin assigns a form to a machine');
+// --- operator is not a maintenance user ---
+r=await Q('insert','requests',{machine_no:machine,symptom:'x',status:'pending_fd'},[],OP);ok(!!r.error,'operator cannot open a job');
+r=await Q('select','requests',null,[],OP);ok(!r.error&&r.data.length===0,'operator sees no jobs');
+r=await Q('select','spare_parts',null,[],OP);ok(!r.error&&r.data.length===0,'operator sees no parts');
+r=await Q('select','machines',null,[],OP);ok(!r.error&&r.data.length>0,'operator can read machines');
+// --- checklist run rules ---
+const res=[{t:'a',k:'ok',ok:true},{t:'b',k:'ok',ok:false,note:'loose'},{t:'c',k:'num',v:9,min:5,max:7,ok:false}];
+r=await Q('insert','checklist_runs',{machine_no:machine,results:res,actor:'someone@scg.com',run_date:'2020-01-01',ng_count:0},[],OP);
+let run=await one('select * from checklist_runs where machine_no=$1',[machine]);
+ok(!r.error&&run&&run.actor===OP&&run.ng_count===2&&String(run.run_date)!=='2020-01-01','database sets who checked, the date and NG count');
+r=await Q('insert','checklist_runs',{machine_no:machine,results:res},[],member);ok(!!r.error&&/ตรวจแล้ว/.test(r.error.message),'one check per machine per day');
+r=await Q('insert','checklist_runs',{machine_no:machine,results:[]},[],OP);ok(!!r.error,'empty result refused');
+r=await Q('delete','checklist_runs',null,[['id',run.id]],OP);ok((await one('select count(*)::int n from checklist_runs where id=$1',[run.id])).n===1,'operator cannot delete a result');
+r=await Q('delete','checklist_runs',null,[['id',run.id]],admin);ok((await one('select count(*)::int n from checklist_runs where id=$1',[run.id])).n===0,'admin can delete a result');
+r=await Q('insert','checklist_runs',{machine_no:machine,results:res},[],'outsider@scg.com');ok(!!r.error,'unknown user cannot record');
+
+// --- UI: operator checks a machine ---
+await p.goto(env.url);await W(400);
+await p.fill('#trEmail',OP);await p.click('#fTrial button');await W(1000);
+ok((await p.textContent('#main')).includes('สแกน QR ที่เครื่อง'),'operator lands on the check home page');
+ok(await p.locator('.side-nav [data-nav="list"]').count()===0&&await p.locator('.side-cta').count()===0,'operator menu has no jobs / แจ้งซ่อม');
+await p.click(`[data-ck="${machine}"]`);await W(300);
+await p.click('#ckAllOk');await p.locator('input[name="ck1"][value="0"]').check({force:true});await p.fill('#ckn1','สายไฟชำรุด');
+await p.click('#ckGo');await W(900);
+run=await one('select * from checklist_runs where machine_no=$1',[machine]);
+ok(run&&run.actor===OP&&run.ng_count===1&&run.results[1].note==='สายไฟชำรุด','operator saves a check from the page');
+ok((await p.textContent('#main')).includes('NG 1 ข้อ'),'list shows the NG');
+await p.screenshot({path:'checklist-operator.png',fullPage:true});
+// --- UI: admin sees today's status ---
+await p.click('#logout');await W(600);await p.fill('#trEmail',admin);await p.click('#fTrial button');await W(1000);
+ok((await p.textContent('#main')).includes('ตรวจก่อนใช้งานวันนี้'),'admin home shows today’s checks');
+await p.click('.side-nav [data-nav="checks"]');await W(500);
+ok((await p.textContent('#main')).includes('Op One'),'checks page lists who checked');
+console.log('errors',errs);await b.close();await db.end();process.exit(0);})();

@@ -3,7 +3,7 @@
 create table if not exists public.app_users (
   email          text primary key check (email = lower(email) and email like '%@' || public.allowed_domain()),
   full_name      text,
-  role           text not null check (role in ('member','foreman_shift','foreman_day','manager','admin')),
+  role           text not null check (role in ('member','foreman_shift','foreman_day','manager','admin','operator')),
   fd_type        text check (fd_type is null or fd_type in ('เครื่องจักร','เครื่องทดสอบ')),  -- Foreman Day ดูแลประเภทเครื่อง (ว่าง = สำรองทุกประเภท)
   is_admin       boolean not null default false,   -- สิทธิ์ผู้ดูแลระบบ (เพิ่มจากบทบาทหลักได้ เช่น Member + Admin)
   memo_approver  boolean not null default false,   -- เลือกเป็นผู้อนุมัติ MEMO (App 1–3) ได้
@@ -24,7 +24,15 @@ create or replace function public.cur_user() returns public.app_users
 language sql stable security definer set search_path = public as $$
   select * from public.app_users where email = public.my_email() and active
 $$;
+-- ผู้ใช้เครื่อง (operator) ทำได้แค่ตรวจเครื่องก่อนใช้งาน: ไม่นับเป็นผู้ใช้ระบบซ่อมบำรุง (cur_member)
+alter table public.app_users drop constraint if exists app_users_role_check;
+alter table public.app_users add constraint app_users_role_check check (role in ('member','foreman_shift','foreman_day','manager','admin','operator'));
 create or replace function public.cur_member() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.app_users where email = public.my_email() and active and role <> 'operator')
+$$;
+-- ทุกคนที่เข้าระบบได้ รวมผู้ใช้เครื่อง
+create or replace function public.cur_any() returns boolean
 language sql stable security definer set search_path = public as $$
   select exists (select 1 from public.app_users where email = public.my_email() and active)
 $$;

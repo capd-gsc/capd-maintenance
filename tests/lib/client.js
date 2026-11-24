@@ -8,6 +8,8 @@ function Q(t){this.b={t,op:'select',f:[],order:[]};}
 Q.prototype.select=function(){if(this.b.op!=='select')this.b.ret=true;return this};
 Q.prototype.order=function(k,o){this.b.order.push([k,!o||o.ascending!==false]);return this};
 Q.prototype.eq=function(k,v){this.b.f.push([k,v]);return this};
+Q.prototype.gte=function(k,v){this.b.f.push([k,v,'>=']);return this};
+Q.prototype.lt=function(k,v){this.b.f.push([k,v,'<']);return this};
 Q.prototype.single=function(){this.b.single=true;return this};
 ['insert','update','upsert','delete'].forEach(o=>Q.prototype[o]=function(p){this.b.op=o;this.b.payload=p;return this});
 Q.prototype.then=function(res,rej){return call(this.b).then(res,rej)};

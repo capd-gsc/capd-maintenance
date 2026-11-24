@@ -1,6 +1,6 @@
 // Runs each query from the fake supabase client against real Postgres, as the signed-in user (RLS + triggers apply)
 const {Pool,types}=require('pg');types.setTypeParser(1082,v=>v);
-const PK={machines:'machine_no',app_users:'email',requests:'id',documents:'id',spare_parts:'part_no',vendors:'name',part_tx:'id'};
+const PK={checklist_templates:'id',machines:'machine_no',app_users:'email',requests:'id',documents:'id',spare_parts:'part_no',vendors:'name',part_tx:'id'};
 const id=s=>{if(!/^[a-z_]+$/.test(s))throw new Error('bad ident '+s);return '"'+s+'"'};
 module.exports=async function(){
   const pool=new Pool({...require('./env.js').pg,max:8});
@@ -10,7 +10,7 @@ module.exports=async function(){
       await c.query('begin');
       await c.query("select set_config('request.jwt.claims',$1,true), set_config('request.headers',$2,true)",[b.email?JSON.stringify({email:b.email}):'',JSON.stringify(b.headers||{})]);
       await c.query('set local role '+(b.email?'authenticated':'anon'));
-      const vals=[];const where=b.f&&b.f.length?' where '+b.f.map(([k,v])=>{vals.push(String(v));return id(k)+'::text=$'+vals.length}).join(' and '):'';
+      const vals=[];const where=b.f&&b.f.length?' where '+b.f.map(([k,v,o])=>{vals.push(String(v));if(o&&!['>=','<'].includes(o))throw new Error('bad op');return id(k)+'::text'+(o||'=')+'$'+vals.length}).join(' and '):'';
       let sql,rows;
       if(b.op==='rpc'){rows=(await c.query('select public.'+id(b.t)+'() as v')).rows;await c.query('commit');return {data:rows[0].v,error:null}}
       const T='public.'+id(b.t);

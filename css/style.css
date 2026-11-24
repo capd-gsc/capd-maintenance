@@ -750,3 +750,57 @@ details.more .mi.bad-t{color:var(--bad)}
 .short-inp{width:120px}
 .pl-ini label.auto b{color:var(--p)}
 .pl-ini label.auto b::after{content:' ✓'}
+
+/* ===================== ตรวจก่อนใช้งานประจำวัน ===================== */
+.ck-card{display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--warn,#c98a1b);border-radius:var(--r);padding:14px 16px;margin:12px 0}
+.ck-card.ok{border-left-color:var(--p)}
+.ck-card.ng{border-left-color:var(--bad,#c0392b)}
+.ck-c1{display:flex;flex-direction:column;gap:2px;flex:1;min-width:180px}
+.ok-t{color:var(--p)}
+.ck-list{list-style:none;padding:0;margin:12px 0;display:flex;flex-direction:column;gap:8px;counter-reset:ck}
+.ck-it{counter-increment:ck;display:grid;grid-template-columns:1fr auto;gap:8px 14px;align-items:center;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.ck-it .ck-q::before{content:counter(ck) ". ";font-weight:700;color:var(--muted)}
+.ck-it.is-ok{border-color:color-mix(in srgb,var(--p) 45%,var(--line))}
+.ck-it.is-ng{border-color:var(--bad,#c0392b);background:color-mix(in srgb,var(--bad,#c0392b) 7%,var(--panel))}
+.ck-it .ck-note{grid-column:1/-1}
+.ck-a{display:flex;align-items:center;gap:8px}
+.ck-v{width:110px}
+.ck-u{color:var(--muted);font-size:13px;min-width:28px}
+.ck-auto{font-size:13px;font-weight:700;min-width:60px}
+.is-ng .ck-auto{color:var(--bad,#c0392b)}.is-ok .ck-auto{color:var(--p)}
+.ck-seg{display:inline-flex;border:1px solid var(--line-2);border-radius:10px;overflow:hidden}
+.ck-seg label{position:relative;cursor:pointer}
+.ck-seg input{position:absolute;opacity:0;inset:0;cursor:pointer}
+.ck-seg span{display:block;padding:8px 18px;font-weight:700;font-size:14px;color:var(--muted);background:var(--panel)}
+.ck-seg label+label span{border-left:1px solid var(--line-2)}
+.ck-seg .okb input:checked+span{background:var(--p);color:#fff}
+.ck-seg .ngb input:checked+span{background:var(--bad,#c0392b);color:#fff}
+.ck-seg input:focus-visible+span{outline:2px solid var(--p);outline-offset:-3px}
+.ck-list.ro .ck-it{grid-template-columns:1fr auto}
+.is-ng .ck-a b{color:var(--bad,#c0392b)}
+.ck-phs{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.ck-phs img{width:160px;height:120px;object-fit:cover;border-radius:8px;border:1px solid var(--line)}
+.ck-sum{display:flex;align-items:baseline;gap:8px;margin:4px 0 10px}
+.ck-sum b{font-size:34px;line-height:1}
+.ck-tpls{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}
+.ck-tpl ol{margin:8px 0 10px;padding-left:20px;font-size:13.5px}
+.ckt-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:6px 0;border-bottom:1px dashed var(--line)}
+.ckt-n{width:22px;font-weight:700;color:var(--muted)}
+.ckt-t{flex:1 1 260px;min-width:0}
+.ckt-k{width:120px}.ckt-u{width:80px}.ckt-min,.ckt-max{width:90px}
+.ckt-btns{display:flex;gap:2px}
+.ckt-ms{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:6px 10px;display:flex;flex-direction:column;gap:4px;margin-top:6px;font-size:14px}
+.ck-scan{display:flex;align-items:center;gap:16px;width:100%;border:0;border-radius:16px;background:var(--p);color:#fff;padding:20px 22px;cursor:pointer;text-align:left;font:inherit;margin:6px 0 4px}
+.ck-scan svg{width:42px;height:42px;flex-shrink:0}
+.ck-scan b{display:block;font-size:19px}
+.ck-scan small{opacity:.85;font-size:14px}
+.ck-mlist{display:flex;flex-direction:column;gap:8px}
+.ck-m{display:flex;align-items:center;gap:12px;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.ck-mn{display:flex;flex-direction:column;gap:2px;min-width:0}
+.ck-mn small{color:var(--muted);font-size:12.5px}
+.op-ph img{max-height:220px;width:100%;object-fit:cover;border-radius:12px}
+@media (max-width:820px){
+  .bnav.op{grid-template-columns:repeat(3,1fr)}
+  .ck-it{grid-template-columns:1fr}
+  .ck-a{justify-content:flex-start}
+}

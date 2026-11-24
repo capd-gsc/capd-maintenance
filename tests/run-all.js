@@ -21,6 +21,7 @@ const SUITES = [
   { name: '10-notify', mode: 'trial' },
   { name: '11-flow-hold-downtime', mode: 'trial' },
   { name: '12-parts-purchase', mode: 'trial' },
+  { name: '14-checklist', mode: 'trial' },
   { name: '13-upgrade-legacy-db', mode: 'upgrade' },
   { name: '12-parts-purchase', mode: 'upgrade', label: '12-parts (after upgrade)' }
 ];

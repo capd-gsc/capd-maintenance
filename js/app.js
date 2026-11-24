@@ -20,7 +20,7 @@ const OPT = {
   interval: [1, 2, 3, 4, 6, 12, 24, 36],
   docKind: ['คู่มือ PDF', 'SOP/WI', 'Drawing', 'วิดีโอ', 'วิธีแก้ปัญหาเบื้องต้น', 'Certificate', 'อื่นๆ']
 };
-const ROLES = { member: 'Member', foreman_shift: 'Foreman Shift', foreman_day: 'Foreman Day', manager: 'Manager', admin: 'Admin' };
+const ROLES = { member: 'Member', foreman_shift: 'Foreman Shift', foreman_day: 'Foreman Day', manager: 'Manager', admin: 'Admin', operator: 'ผู้ใช้เครื่อง' };
 const SL = { pending_fd: 'รอ Foreman Day อนุมัติ', returned: 'ส่งกลับแก้ไข', wait_admin: 'รอ Admin แจ้งซ่อม', ext_repair: 'RMT/FM กำลังซ่อม', quotation: 'ขอใบเสนอราคา / MEMO', memo_approval: 'รอ Manager อนุมัติ MEMO', memo_rejected: 'MEMO ไม่อนุมัติ', po_vendor: 'ออก PO / นัด Vendor', closed: 'ปิดงาน', cancelled: 'ยกเลิก' };
 const SCLS = { pending_fd: 's-wait', returned: 's-rej', wait_admin: 's-queue', ext_repair: 's-work', quotation: 's-queue', memo_approval: 's-wait', memo_rejected: 's-rej', po_vendor: 's-test', closed: 's-done', cancelled: 's-done' };
 const STATUS_ORDER = ['pending_fd', 'returned', 'wait_admin', 'ext_repair', 'quotation', 'memo_approval', 'memo_rejected', 'po_vendor', 'closed', 'cancelled'];
@@ -176,6 +176,9 @@ async function loadAll() {
   D.parts = sp.error ? [] : sp.data; D.vendors = vd.error ? [] : vd.data; D.hasParts = !sp.error;
   // รูปเครื่องจักร (ถ้ายังไม่ได้รัน install.sql รุ่นใหม่ ให้เป็นรายการว่าง)
   const mp = await sb.from('machine_photos').select('*').order('created_at'); D.mphotos = mp.error ? [] : mp.data; D.hasMPhotos = !mp.error;
+  // ตรวจก่อนใช้งานประจำวัน: แบบฟอร์ม + ผลตรวจ 60 วันล่าสุด
+  const ct = await sb.from('checklist_templates').select('*').order('name'); D.hasChecklist = !ct.error; D.ckTpl = ct.error ? [] : ct.data;
+  if (D.hasChecklist) { const d0 = new Date(); d0.setDate(d0.getDate() - 60); const cr = await sb.from('checklist_runs').select('*').gte('run_date', d0.toISOString().slice(0, 10)).order('created_at', { ascending: false }); D.ckRuns = cr.error ? [] : cr.data; } else D.ckRuns = [];
   // ประวัติทุกใบงาน (หน้า Flow / รายงาน) โหลดเมื่อเปิดหน้านั้นครั้งแรก แล้วรีเฟรชพร้อมข้อมูลอื่น
   if (D.logsAll) { const lg = await sb.from('request_logs').select('request_id, at, action, actor').order('at'); if (!lg.error) D.logsAll = lg.data || []; }
 }
@@ -319,12 +322,13 @@ async function enter(session) {
 }
 
 /* =================== SHELL =================== */
-const NAV_ICON = { home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
+const NAV_ICON = { checks: 'approve', home: 'home', new: 'new', list: 'list', approve: 'approve', flow: 'flow', machine: 'machine', parts: 'parts', cal: 'cal', docs: 'docs', report: 'report', admin: 'admin' };
 // เมนู: งานประจำวันบน ข้อมูลอ้างอิงล่าง · "แจ้งซ่อม" เป็นปุ่ม · อนุมัติรวมในหน้าหลัก · Flow รวมในใบงาน
 function navGroups() {
+  if (isOp()) return [['ตรวจเครื่อง', [['home', 'หน้าหลัก']]]];
   return [
     ['งาน', [['home', 'หน้าหลัก', myTasks().length], ['list', 'ใบงาน'], ['cal', 'PM / CAL', myReminders().length]]],
-    ['เครื่องและอะไหล่', [['machine', 'เครื่องจักร'], ['parts', 'อะไหล่', canParts() ? lowParts().length : 0]]],
+    ['เครื่องและอะไหล่', [['machine', 'เครื่องจักร'], ...(D.hasChecklist ? [['checks', 'ตรวจประจำวัน', isFD() ? ckNgToday() : 0]] : []), ['parts', 'อะไหล่', canParts() ? lowParts().length : 0]]],
     ['ข้อมูล', [['docs', 'คลังเอกสาร'], ['report', 'รายงาน']]]
   ];
 }
@@ -333,10 +337,11 @@ function navItems() {
   if (isAdmin()) nav.push(['admin', 'ผู้ใช้และสิทธิ์']);
   return nav;
 }
-const CRUMBS = { vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
+const CRUMBS = { checks: 'ตรวจเครื่องประจำวัน', vendors: 'Vendor', flow: 'Flow งาน', parts: 'คลังอะไหล่', home: 'หน้าหลัก', new: 'แจ้งซ่อม / เปิดใบงาน', list: 'ใบงานทั้งหมด', approve: 'รออนุมัติ', machine: 'เครื่องจักร', cal: 'แผน PM / CAL', docs: 'คลังเอกสาร', report: 'รายงาน', admin: 'ผู้ใช้และสิทธิ์', detail: 'รายละเอียดใบงาน', scan: 'Dashboard เครื่องจักร' };
 const navOn = k => S.view === k || (['detail', 'flow'].includes(S.view) && k === 'list') || (S.view === 'approve' && k === 'home') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
+  if (isOp() && !['home', 'scan'].includes(S.view)) S.view = 'home';
   dirty = false; lastSync = Date.now();
   const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list'].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
   const sub = S.view === 'detail' ? S.sel : S.view === 'scan' ? S.scanNo : esc(roleText(S.me));
@@ -363,11 +368,11 @@ function render() {
       <main class="main" id="main">${VIEWS[S.view]()}</main>
     </div>
   </div>
-  <nav class="bnav" aria-label="เมนูหลัก">
+  <nav class="bnav ${isOp() ? 'op' : ''}" aria-label="เมนูหลัก">
     <button data-nav="home" class="${navOn('home') ? 'on' : ''}">${IC.home}<span>หน้าหลัก</span>${myTasks().length ? `<i class="badge">${myTasks().length}</i>` : ''}</button>
-    <button data-nav="new" class="${navOn('new') ? 'on' : ''}">${IC.new}<span>แจ้งซ่อม</span></button>
+    ${isOp() ? '' : `<button data-nav="new" class="${navOn('new') ? 'on' : ''}">${IC.new}<span>แจ้งซ่อม</span></button>`}
     <button data-scanqr class="fabw" aria-label="สแกน QR ที่เครื่อง"><span class="fab">${IC.qr}</span><span>สแกน</span></button>
-    <button data-nav="list" class="${navOn('list') ? 'on' : ''}">${IC.list}<span>ใบงาน</span></button>
+    ${isOp() ? '' : `<button data-nav="list" class="${navOn('list') ? 'on' : ''}">${IC.list}<span>ใบงาน</span></button>`}
     <button id="moreBtn" class="${more.some(([k]) => navOn(k)) ? 'on' : ''}">${IC.more}<span>เมนู</span>${moreBadge ? `<i class="badge">${moreBadge}</i>` : ''}</button>
   </nav>`;
   bind();
@@ -448,6 +453,7 @@ function weekChart() {
 /* =================== VIEWS =================== */
 const VIEWS = {
   home() {
+    if (isOp()) return opHome();
     const t = myTasks(), open = D.requests.filter(q => OPEN(q.status)), rem = myReminders();
     const crit = open.filter(q => q.urgency === 'Critical').length, soon = rem.filter(q => daysLeft(q.due_date) <= 30).length;
     const tile = (ic, tone, n, label, nav) => `<button class="tile ${tone}" ${nav ? `data-nav="${nav}"` : ''}><span class="ti">${ic}</span><b data-count="${n}">${n}</b><span>${label}</span></button>`;
@@ -465,6 +471,7 @@ const VIEWS = {
         ${(() => { const fdRows = D.requests.filter(q => q.status === 'pending_fd').sort((a, b) => canFD(b.machine_no) - canFD(a.machine_no)), memoRows = D.requests.filter(q => q.status === 'memo_approval' && (isAdmin() || q.memo_approvers[q.memo_step] === S.me.email)); const showAll = isAdmin() || is('foreman_day', 'manager'); return tabs('home', [['mine', 'งานของฉัน', taskTable(t, 'ไม่มีงานค้างสำหรับคุณ', true), t.length], showAll ? ['appr', 'รออนุมัติทั้งหมด', `<h3 class="sec" style="margin-top:4px">ใบแจ้งซ่อมรอ Foreman Day อนุมัติ (${fdRows.length})</h3>${taskTable(fdRows, 'ไม่มีใบงานรออนุมัติ', true)}<h3 class="sec">MEMO รอ${isAdmin() ? ' Manager' : 'คุณ'}อนุมัติ (${memoRows.length})</h3>${taskTable(memoRows, 'ไม่มี MEMO รออนุมัติ', true)}`, fdRows.length + memoRows.length] : null]); })()}
       </section>
       <div class="stack">
+        ${ckBox()}
         ${nextUpCard()}
         ${pl.length ? `<section class="box dial-box"><h3>PM / CAL ไม่เกินกำหนด</h3>${dial(onTime, pl.length, 'ตรงเวลา', `${onTime} จาก ${pl.length} แผน · เกินกำหนด ${pl.length - onTime}`)}</section>` : ''}
         <section class="box"><h3>งานเข้า / ปิด รายสัปดาห์</h3>${weekChart()}</section>
@@ -626,6 +633,7 @@ const VIEWS = {
       ['pr', 'คำขอซื้อที่ยังไม่ปิด', openPR.length ? taskTable(openPR) : '<div class="empty">ไม่มีคำขอซื้อค้าง</div>', openPR.length]])}`;
   },
 
+  checks() { return ckPage(); },
   docs() {
     const kinds = ['all', ...new Set(D.docs.map(d => d.kind))];
     let rows = D.docs;
@@ -722,6 +730,7 @@ const VIEWS = {
   scan() {
     const m = M(S.scanNo);
     if (!m.machine_no) return '<div class="empty">ไม่พบเครื่องจักรนี้ในระบบ</div>';
+    if (isOp()) return opScan(m);
     const js = D.requests.filter(q => q.machine_no === m.machine_no);
     const open = js.filter(q => OPEN(q.status));
     const closed = js.filter(q => q.status === 'closed');
@@ -753,6 +762,7 @@ const VIEWS = {
         D.hasParts && canCreate() ? `<button class="mi" data-missue="${esc(m.machine_no)}">เบิกอะไหล่ใช้กับเครื่องนี้</button>` : ''])}</div>
     ${machineGallery(m)}
     <div class="mcard">${[['Type', m.machine_type], ['Model', m.model], ['Serial', m.serial_number], ['Location', m.location], ['Priority', m.priority], ['Maintenance', m.maintenance_type], ['PM', m.pm_interval_month ? 'ทุก ' + m.pm_interval_month + ' เดือน' : ''], ['CAL', m.cal_interval_month ? 'ทุก ' + m.cal_interval_month + ' เดือน' : '']].filter(x => x[1]).map(([k, v]) => `<div><span>${k}</span>${esc(v)}</div>`).join('')}${m.parent_machine ? `<div><span>เป็นอุปกรณ์ของ</span><a href="?m=${encodeURIComponent(m.parent_machine)}" class="folio" data-scan="${esc(m.parent_machine)}">${esc(m.parent_machine)}</a> ${esc(M(m.parent_machine).machine_name || '')}</div>` : ''}</div>
+    ${ckCard(m)}
     ${machineContacts(m)}
     ${(() => { const ks = kidsOf(m.machine_no); if (!ks.length) return ''; const pl = planList(); return `<h3 class="sec">อุปกรณ์ประกอบ (${ks.length})</h3><div class="tbl-wrap"><table><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>PM / CAL ครบกำหนด</th><th>ใบงานค้าง</th></tr></thead><tbody>${ks.map(k => { const ps = pl.filter(x => x.m.machine_no === k.machine_no), oj = D.requests.filter(q => q.machine_no === k.machine_no && OPEN(q.status)).length; return `<tr><td class="mono"><a href="?m=${encodeURIComponent(k.machine_no)}" class="folio" data-scan="${esc(k.machine_no)}">${esc(k.machine_no)}</a></td><td>${esc(k.machine_name)}<br><span class="sub">${esc(k.model || '')}${k.serial_number ? ' · S/N ' + esc(k.serial_number) : ''}</span></td><td><span class="pill ${k.status === 'Active' ? 's-confirm' : k.status === 'Maintenance' ? 's-wait' : 's-done'}">${esc(k.status)}</span></td><td>${ps.length ? ps.map(x => `${x.kind} ${fd(x.next, false)} ${stp(x.days)}`).join('<br>') : '<span class="sub">ไม่มีแผน</span>'}</td><td class="num">${oj || '-'}</td></tr>`; }).join('')}</tbody></table></div>`; })()}
     ${tabs('mach', [['open', 'ใบงานค้าง', `${open.length ? open.map(q => `<div class="jcard">
@@ -777,6 +787,7 @@ const VIEWS = {
         <h3 style="margin-top:14px">เอกสารของเครื่อง (${docs.length})</h3>${docs.length ? docs.map(d => `<div><a href="#" class="folio" data-doc="${d.id}">${esc(d.title)}</a> <span class="sub">${esc(d.kind)}</span></div>`).join('') : '<div class="sub">ยังไม่มีเอกสาร</div>'}</div>
     </div>
 `],
+      D.hasChecklist && (ckOf(m) || D.ckRuns.some(r => r.machine_no === m.machine_no)) ? ['ck', 'ตรวจประจำวัน', ckHistory(m.machine_no)] : null,
       (() => { const jp = jobPhotos(m.machine_no); return jp.length ? ['photos', 'รูปจากใบงาน', `<div class="mg-strip jp">${jp.map((x, i) => `<button class="mg-th" data-jpview="${i}" aria-label="รูปจาก ${esc(x.q.id)}">${imgTag(x.path, 'รูปจาก ' + x.q.id)}<span class="mg-cap">${esc(x.q.id)}</span></button>`).join('')}</div>`, jp.length] : null; })(),
       ['hist', 'ประวัติ', `
     ${closed.length ? `<div class="tbl-wrap"><table><thead><tr><th>เลขที่</th><th>ประเภท</th><th>อาการ / วิธีแก้</th><th>สาเหตุ</th><th>อะไหล่</th><th>Downtime</th><th>ค่าใช้จ่าย</th><th>เสร็จ</th></tr></thead><tbody>
@@ -1842,6 +1853,191 @@ function printQR(list) {
   $('#qrPrint').onclick = () => window.print();
 }
 
+/* ---------- ตรวจเครื่องก่อนใช้งานประจำวัน (Checklist) ---------- */
+const isOp = () => role() === 'operator';
+const ckTpl = id => (D.ckTpl || []).find(t => t.id === id);
+const ckOf = m => m && m.checklist_template ? ckTpl(m.checklist_template) : null;
+const ckMachines = () => D.machines.filter(m => m.status !== 'Inactive' && ckOf(m));
+const ckToday = no => (D.ckRuns || []).find(r => r.machine_no === no && r.run_date === todayIso());
+const ckNgToday = () => ckMachines().filter(m => ckToday(m.machine_no)?.ng_count).length;
+const hhmm = v => { const d = new Date(v); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+const ckStat = m => { const r = ckToday(m.machine_no); return r ? (r.ng_count ? `<span class="pill s-rej">NG ${r.ng_count} ข้อ</span>` : '<span class="pill s-confirm">ตรวจแล้ว ปกติ</span>') : '<span class="pill s-wait">ยังไม่ตรวจ</span>'; };
+const ckQ = m => esc((m.machine_no + ' ' + (m.machine_name || '') + ' ' + (m.location || '')).toLowerCase());
+function ckCard(m) {
+  if (!D.hasChecklist || !ckOf(m) || m.status === 'Inactive') return '';
+  const r = ckToday(m.machine_no), t = ckOf(m);
+  return `<section class="ck-card ${r ? (r.ng_count ? 'ng' : 'ok') : ''}">
+    <div class="ck-c1"><b>ตรวจก่อนใช้งานวันนี้</b><span class="sub">แบบฟอร์ม ${esc(t.name)} · ${t.items.length} ข้อ</span></div>
+    ${r ? `<div class="ck-c1">${r.ng_count ? `<b class="bad-t">พบ NG ${r.ng_count} ข้อ</b>` : '<b class="ok-t">ปกติทุกข้อ</b>'}<span class="sub">โดย ${esc(nm(r.actor))} · ${hhmm(r.created_at)} น.</span></div><button class="btn ghost" data-ckview="${r.id}">ดูผลตรวจ</button>`
+      : `<button class="btn" data-ck="${esc(m.machine_no)}">${IC.approve}<span>ตรวจก่อนใช้งาน</span></button>`}
+  </section>`;
+}
+function ckHistory(no) {
+  const rs = (D.ckRuns || []).filter(r => r.machine_no === no);
+  if (!rs.length) return '<div class="empty">ยังไม่มีผลตรวจใน 60 วันที่ผ่านมา</div>';
+  return `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>ผล</th><th>ผู้ตรวจ</th><th></th></tr></thead><tbody>${rs.map(r => `<tr><td class="num">${dmy(r.run_date)} · ${hhmm(r.created_at)}</td><td>${r.ng_count ? `<span class="pill s-rej">NG ${r.ng_count} ข้อ</span>` : '<span class="pill s-confirm">ปกติ</span>'}</td><td>${esc(nm(r.actor))}</td><td><button class="btn ghost sm" data-ckview="${r.id}">ดู</button></td></tr>`).join('')}</tbody></table></div>`;
+}
+function ckForm(no) {
+  const m = M(no), t = ckOf(m);
+  if (!t) return toast('เครื่องนี้ยังไม่ได้ผูกแบบฟอร์มตรวจ');
+  if (ckToday(no)) return ckView(ckToday(no).id);
+  const items = t.items || [];
+  modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">ตรวจก่อนใช้งาน · ${esc(no)}</h2><button class="btn ghost" data-close>ปิด</button></div>
+    <p class="sub" style="margin-top:0">${esc(m.machine_name || '')} · ${esc(t.name)} · ${dmy(todayIso())} · ผู้ตรวจ ${esc(nm(S.me.email))}</p>
+    ${items.some(i => i.k !== 'num') ? '<button class="btn ghost sm" id="ckAllOk">ข้อที่ยังไม่เลือก → OK ทั้งหมด</button>' : ''}
+    <ol class="ck-list">${items.map((it, i) => `<li class="ck-it" data-i="${i}"><div class="ck-q">${esc(it.t)}${it.k === 'num' && (it.min != null || it.max != null) ? `<span class="sub"> · เกณฑ์ ${it.min ?? '…'} – ${it.max ?? '…'} ${esc(it.u || '')}</span>` : ''}</div>
+      <div class="ck-a">${it.k === 'num' ? `<label class="sr" for="ckv${i}">ค่าที่วัดได้</label><input id="ckv${i}" class="inp ck-v" type="number" step="any" inputmode="decimal" placeholder="ค่า"><span class="ck-u">${esc(it.u || '')}</span><span class="ck-auto" id="cka${i}"></span>`
+        : `<div class="ck-seg" role="radiogroup" aria-label="ผลข้อ ${i + 1}"><label class="okb"><input type="radio" name="ck${i}" value="1"><span>OK</span></label><label class="ngb"><input type="radio" name="ck${i}" value="0"><span>NG</span></label></div>`}</div>
+      <label class="sr" for="ckn${i}">อาการที่พบ</label><input class="inp ck-note" id="ckn${i}" placeholder="อาการที่พบ (ข้อนี้ NG)" hidden></li>`).join('')}</ol>
+    <div class="field"><label for="ckNote">หมายเหตุ (ถ้ามี)</label><textarea id="ckNote" class="inp" rows="2"></textarea></div>
+    <div class="field"><label for="ckPh">แนบรูป (ถ้ามี · ไม่เกิน 3 รูป)</label><input id="ckPh" type="file" accept="image/*" multiple></div>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="ckGo" disabled>บันทึกผลตรวจ</button><span class="sub" id="ckLeft"></span></div>`, 'wide');
+  const st = () => items.map((it, i) => {
+    if (it.k === 'num') { const v0 = $('#ckv' + i).value.trim(); if (v0 === '') return null; const v = Number(v0); return { v, ok: (it.min == null || v >= it.min) && (it.max == null || v <= it.max) }; }
+    const c = document.querySelector(`input[name="ck${i}"]:checked`); return c ? { ok: c.value === '1' } : null;
+  });
+  const upd = () => {
+    const r = st();
+    r.forEach((x, i) => { const ng = !!x && !x.ok, li = document.querySelector(`.ck-it[data-i="${i}"]`); $('#ckn' + i).hidden = !ng; li.classList.toggle('is-ng', ng); li.classList.toggle('is-ok', !!x && x.ok); if (items[i].k === 'num') $('#cka' + i).textContent = x ? (x.ok ? 'OK' : 'NG นอกเกณฑ์') : ''; });
+    const left = r.filter(x => !x).length; $('#ckGo').disabled = left > 0;
+    $('#ckLeft').textContent = left ? `เหลือ ${left} ข้อ` : (r.some(x => !x.ok) ? `NG ${r.filter(x => !x.ok).length} ข้อ` : 'ปกติทุกข้อ');
+  };
+  [...$$('#modal .ck-list input')].forEach(el => el.addEventListener(el.type === 'number' ? 'input' : 'change', upd));
+  $('#ckAllOk') && ($('#ckAllOk').onclick = () => { items.forEach((it, i) => { if (it.k !== 'num' && !document.querySelector(`input[name="ck${i}"]:checked`)) document.querySelector(`input[name="ck${i}"][value="1"]`).checked = true; }); upd(); });
+  upd();
+  $('#ckGo').onclick = async () => {
+    const go = $('#ckGo'); go.disabled = true;
+    try {
+      const r = st(), files = [...($('#ckPh').files || [])].filter(f => /^image\//.test(f.type)).slice(0, 3);
+      const up = files.length ? await uploadFiles(`checklists/${no}/${todayIso()}`, 'ck', files) : [];
+      const results = items.map((it, i) => Object.assign({ t: it.t, k: it.k === 'num' ? 'num' : 'ok', ok: r[i].ok }, it.k === 'num' ? { v: r[i].v, u: it.u || '', min: it.min ?? null, max: it.max ?? null } : {}, r[i].ok ? {} : { note: $('#ckn' + i).value.trim() || null }));
+      const { error } = await sb.from('checklist_runs').insert({ machine_no: no, template_id: t.id, template_name: t.name, results, note: $('#ckNote').value.trim() || null, photos: up.map(u => u.path) });
+      if (error) throw error;
+      const ng = results.filter(x => !x.ok).length;
+      closeModal(); toast(ng ? `บันทึกผลตรวจแล้ว · พบ NG ${ng} ข้อ` : 'บันทึกผลตรวจแล้ว · ปกติทุกข้อ'); reload();
+    } catch (e) { go.disabled = false; fail(e); }
+  };
+}
+function ckView(id) {
+  const r = (D.ckRuns || []).find(x => String(x.id) === String(id)); if (!r) return;
+  const m = M(r.machine_no);
+  modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">ผลตรวจ ${esc(r.machine_no)} · ${dmy(r.run_date)}</h2><button class="btn ghost" data-close>ปิด</button></div>
+    <p class="sub" style="margin-top:0">${esc(m.machine_name || '')} · ${esc(r.template_name || '')} · โดย ${esc(nm(r.actor))} ${hhmm(r.created_at)} น. · ${r.ng_count ? `<b class="bad-t">NG ${r.ng_count} ข้อ</b>` : 'ปกติทุกข้อ'}</p>
+    <ol class="ck-list ro">${(r.results || []).map(x => `<li class="ck-it ${x.ok ? 'is-ok' : 'is-ng'}"><div class="ck-q">${esc(x.t)}${x.note ? `<div class="sub bad-t">${esc(x.note)}</div>` : ''}</div><div class="ck-a"><b>${x.k === 'num' ? `${esc(String(x.v))} ${esc(x.u || '')}` : x.ok ? 'OK' : 'NG'}</b>${x.k === 'num' && !x.ok ? ' <span class="sub">นอกเกณฑ์</span>' : ''}</div></li>`).join('')}</ol>
+    ${r.note ? `<p><b>หมายเหตุ:</b> ${esc(r.note)}</p>` : ''}
+    ${(r.photos || []).length ? `<div class="ck-phs">${r.photos.map(ph => imgTag(ph, 'รูปประกอบผลตรวจ')).join('')}</div>` : ''}
+    ${isAdmin() ? `<div class="btns" style="margin-top:12px"><button class="btn ghost sm bad-t" id="ckDel">ลบผลตรวจนี้</button><span class="sub">ลบแล้วตรวจใหม่ได้ในวันเดียวกัน</span></div>` : ''}`, 'wide');
+  $('#ckDel') && ($('#ckDel').onclick = async e => {
+    const b = e.currentTarget; if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ?'; return; }
+    const { error } = await sb.from('checklist_runs').delete().eq('id', r.id); if (error) return fail(error);
+    closeModal(); toast('ลบผลตรวจแล้ว'); reload();
+  });
+}
+function ckBox() {
+  if (!D.hasChecklist) return ''; const ms = ckMachines(); if (!ms.length) return '';
+  const done = ms.filter(m => ckToday(m.machine_no)), ng = done.filter(m => ckToday(m.machine_no).ng_count).length;
+  return `<section class="box ck-box"><h3>ตรวจก่อนใช้งานวันนี้</h3><div class="ck-sum"><b data-count="${done.length}">${done.length}</b><span>/ ${ms.length} เครื่อง</span>${ng ? `<span class="pill s-rej">NG ${ng} เครื่อง</span>` : ''}</div><button class="btn ghost sm" data-nav="checks">ดูรายละเอียด</button></section>`;
+}
+function ckPage() {
+  if (!D.hasChecklist) return `<div class="h-row"><h1>ตรวจเครื่องประจำวัน</h1></div><div class="empty">ยังไม่ได้เปิดใช้ · Admin รัน supabase/install.sql ใน Supabase</div>`;
+  const ms = ckMachines().sort((a, b) => (!!ckToday(a.machine_no)) - (!!ckToday(b.machine_no)) || a.machine_no.localeCompare(b.machine_no));
+  const done = ms.filter(m => ckToday(m.machine_no)).length;
+  const today = `<div class="fbar"><label class="sr" for="ckq">ค้นหาเครื่อง</label><input id="ckq" class="search" placeholder="ค้นหาเครื่อง" value="${esc(S.ckq || '')}"></div>` + (ms.length ? `<div class="tbl-wrap"><table><thead><tr><th>เครื่อง</th><th>แบบฟอร์ม</th><th>วันนี้</th><th>ผู้ตรวจ</th><th></th></tr></thead><tbody>${ms.map(m => { const r = ckToday(m.machine_no); return `<tr data-q="${ckQ(m)}"><td><a href="?m=${encodeURIComponent(m.machine_no)}" class="folio" data-scan="${esc(m.machine_no)}">${esc(m.machine_no)}</a> ${esc(m.machine_name || '')}<br><span class="sub">${esc(m.location || '')}</span></td><td>${esc(ckOf(m).name)}</td><td>${ckStat(m)}</td><td>${r ? `${esc(nm(r.actor))}<br><span class="sub">${hhmm(r.created_at)} น.</span>` : '<span class="sub">-</span>'}</td><td>${r ? `<button class="btn ghost sm" data-ckview="${r.id}">ดูผล</button>` : `<button class="btn sm" data-ck="${esc(m.machine_no)}">ตรวจ</button>`}</td></tr>`; }).join('')}</tbody></table></div>` : `<div class="empty">ยังไม่มีเครื่องที่ต้องตรวจประจำวัน${isAdmin() ? ' · ไปที่แท็บ “แบบฟอร์ม” แล้วเลือกเครื่องที่ใช้แบบฟอร์มนั้น' : ''}</div>`);
+  const runs = (D.ckRuns || []).filter(r => !S.ckNg || r.ng_count);
+  const hist = `<div class="fbar"><label><input type="checkbox" id="ckNg" ${S.ckNg ? 'checked' : ''}> แสดงเฉพาะที่มี NG</label></div>` + (runs.length ? `<div class="tbl-wrap"><table><thead><tr><th>วันที่</th><th>เครื่อง</th><th>ผล</th><th>ผู้ตรวจ</th><th></th></tr></thead><tbody>${runs.map(r => `<tr><td class="num">${dmy(r.run_date)} · ${hhmm(r.created_at)}</td><td><b class="mono">${esc(r.machine_no)}</b> ${esc(M(r.machine_no).machine_name || '')}</td><td>${r.ng_count ? `<span class="pill s-rej">NG ${r.ng_count} ข้อ</span>` : '<span class="pill s-confirm">ปกติ</span>'}</td><td>${esc(nm(r.actor))}</td><td><button class="btn ghost sm" data-ckview="${r.id}">ดู</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">ยังไม่มีผลตรวจ</div>');
+  const forms = `<div class="ck-tpls">${(D.ckTpl || []).map(t => { const n = D.machines.filter(m => m.checklist_template === t.id).length; return `<div class="card ck-tpl"><h3>${esc(t.name)}</h3><span class="sub">${t.items.length} ข้อ · ใช้กับ ${n} เครื่อง</span><ol>${t.items.slice(0, 4).map(i => `<li>${esc(i.t)}${i.k === 'num' ? ` <span class="sub">(${esc(i.u || 'ตัวเลข')})</span>` : ''}</li>`).join('')}${t.items.length > 4 ? `<li class="sub">… อีก ${t.items.length - 4} ข้อ</li>` : ''}</ol><button class="btn ghost sm" data-cktpl="${esc(t.id)}">${isAdmin() ? 'แก้ไข / เลือกเครื่อง' : 'ดูทั้งหมด'}</button></div>`; }).join('')}</div>${isAdmin() ? '<button class="btn" data-cktpl="" style="margin-top:12px">+ แบบฟอร์มใหม่</button>' : ''}`;
+  return `<div class="h-row"><h1>ตรวจเครื่องประจำวัน</h1><span class="sub">วันนี้ ${done} / ${ms.length} เครื่อง</span>${moreMenu(['<button class="mi" data-ckx="0">Export ผลตรวจ เดือนนี้ (Excel)</button>', '<button class="mi" data-ckx="1">Export ผลตรวจ เดือนก่อน (Excel)</button>'])}</div>
+    ${tabs('ck', [['today', 'วันนี้', today, ms.length - done], ['hist', 'ประวัติ 60 วัน', hist], ['forms', 'แบบฟอร์ม', forms, (D.ckTpl || []).length]])}`;
+}
+async function ckExport(back) {
+  try {
+    const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - back);
+    const from = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-01`, e = new Date(d); e.setMonth(e.getMonth() + 1); const to = `${e.getFullYear()}-${pad(e.getMonth() + 1)}-01`;
+    const { data, error } = await sb.from('checklist_runs').select('*').gte('run_date', from).lt('run_date', to).order('run_date');
+    if (error) throw error; if (!data.length) return toast('ไม่มีผลตรวจในเดือนนี้');
+    const sum = data.map(r => ({ 'วันที่': r.run_date, 'เวลา': hhmm(r.created_at), 'Machine number': r.machine_no, 'ชื่อเครื่อง': M(r.machine_no).machine_name || '', 'แบบฟอร์ม': r.template_name || '', 'ผู้ตรวจ': nm(r.actor), 'NG (ข้อ)': r.ng_count, 'หมายเหตุ': r.note || '' }));
+    const det = data.flatMap(r => (r.results || []).map((x, i) => ({ 'วันที่': r.run_date, 'Machine number': r.machine_no, 'ข้อ': i + 1, 'หัวข้อ': x.t, 'ผล': x.ok ? 'OK' : 'NG', 'ค่าที่วัด': x.k === 'num' ? x.v : '', 'หน่วย': x.u || '', 'อาการ (NG)': x.note || '', 'ผู้ตรวจ': nm(r.actor) })));
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sum), 'สรุปรายวัน'); XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(det), 'รายละเอียดทุกข้อ');
+    XLSX.writeFile(wb, `CAPD-Checklist-${from.slice(0, 7)}.xlsx`);
+  } catch (e) { fail(e); }
+}
+function ckTplEdit(id) {
+  const t = id ? ckTpl(id) : { id: '', name: '', items: [{ t: '', k: 'ok' }] }; if (!t) return;
+  if (!isAdmin()) return modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">${esc(t.name)}</h2><button class="btn ghost" data-close>ปิด</button></div><ol class="ck-list ro">${t.items.map(i => `<li class="ck-it"><div class="ck-q">${esc(i.t)}</div><div class="ck-a sub">${i.k === 'num' ? `${i.min ?? '…'} – ${i.max ?? '…'} ${esc(i.u || '')}` : 'OK / NG'}</div></li>`).join('')}</ol>`, 'wide');
+  const items = JSON.parse(JSON.stringify(t.items || []));
+  const row = (it, i) => `<div class="ckt-row"><span class="ckt-n">${i + 1}</span><input class="inp ckt-t" data-i="${i}" value="${esc(it.t)}" placeholder="หัวข้อที่ตรวจ" aria-label="หัวข้อที่ ${i + 1}">
+    <select class="inp ckt-k" data-i="${i}" aria-label="ชนิดคำตอบข้อ ${i + 1}"><option value="ok" ${it.k !== 'num' ? 'selected' : ''}>OK / NG</option><option value="num" ${it.k === 'num' ? 'selected' : ''}>ตัวเลข</option></select>
+    ${it.k === 'num' ? `<input class="inp ckt-u" data-i="${i}" value="${esc(it.u || '')}" placeholder="หน่วย" aria-label="หน่วย"><input class="inp ckt-min" data-i="${i}" type="number" step="any" value="${it.min ?? ''}" placeholder="ต่ำสุด" aria-label="ค่าต่ำสุด"><input class="inp ckt-max" data-i="${i}" type="number" step="any" value="${it.max ?? ''}" placeholder="สูงสุด" aria-label="ค่าสูงสุด">` : ''}
+    <span class="ckt-btns"><button class="iconbtn ghosty" data-cku="${i}" aria-label="เลื่อนขึ้น">↑</button><button class="iconbtn ghosty" data-ckd="${i}" aria-label="เลื่อนลง">↓</button><button class="iconbtn ghosty bad-t" data-ckr="${i}" aria-label="ลบข้อนี้">×</button></span></div>`;
+  modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">${id ? 'แก้ไขแบบฟอร์มตรวจ' : 'แบบฟอร์มตรวจใหม่'}</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
+    <div class="field"><label for="cktName">ชื่อแบบฟอร์ม</label><input id="cktName" class="inp" value="${esc(t.name)}" placeholder="เช่น เครื่องจักรผลิต"></div>
+    <h3 class="sec">หัวข้อที่ตรวจ</h3><p class="sub" style="margin-top:0">ตัวเลข: ใส่ค่าต่ำสุด / สูงสุด ถ้าวัดได้นอกช่วงนี้ ระบบบันทึกเป็น NG ให้เอง</p>
+    <div id="cktRows"></div><button class="btn ghost sm" id="cktAdd">+ เพิ่มหัวข้อ</button>
+    <h3 class="sec">เครื่องที่ต้องตรวจด้วยแบบฟอร์มนี้ <span class="sub" id="cktN"></span></h3>
+    <label class="sr" for="cktQ">ค้นหาเครื่อง</label><input id="cktQ" class="search" placeholder="ค้นหาเครื่อง">
+    <div class="ckt-ms" id="cktMs">${D.machines.filter(m => m.status !== 'Inactive').map(m => { const o = m.checklist_template && m.checklist_template !== id ? ckTpl(m.checklist_template) : null; return `<label data-q="${ckQ(m)}"><input type="checkbox" value="${esc(m.machine_no)}" ${id && m.checklist_template === id ? 'checked' : ''}> <b class="mono">${esc(m.machine_no)}</b> ${esc(m.machine_name || '')}${o ? ` <span class="sub">(ตอนนี้ใช้: ${esc(o.name)})</span>` : ''}</label>`; }).join('')}</div>
+    <div class="btns" style="margin-top:12px"><button class="btn" id="cktSave">บันทึก</button>${id ? '<button class="btn ghost bad-t" id="cktDel">ลบแบบฟอร์ม</button>' : ''}</div>`, 'wide');
+  const num = v => v === '' || v == null ? null : Number(v);
+  const sync = () => {
+    $$('.ckt-t').forEach(e => items[e.dataset.i].t = e.value); $$('.ckt-k').forEach(e => items[e.dataset.i].k = e.value);
+    $$('.ckt-u').forEach(e => items[e.dataset.i].u = e.value); $$('.ckt-min').forEach(e => items[e.dataset.i].min = num(e.value)); $$('.ckt-max').forEach(e => items[e.dataset.i].max = num(e.value));
+  };
+  const draw = () => {
+    $('#cktRows').innerHTML = items.map(row).join('');
+    $$('.ckt-k').forEach(e => e.onchange = () => { sync(); draw(); });
+    $$('[data-cku]').forEach(b => b.onclick = () => { sync(); const i = +b.dataset.cku; if (i > 0) [items[i - 1], items[i]] = [items[i], items[i - 1]]; draw(); });
+    $$('[data-ckd]').forEach(b => b.onclick = () => { sync(); const i = +b.dataset.ckd; if (i < items.length - 1) [items[i + 1], items[i]] = [items[i], items[i + 1]]; draw(); });
+    $$('[data-ckr]').forEach(b => b.onclick = () => { sync(); items.splice(+b.dataset.ckr, 1); draw(); });
+  };
+  const cnt = () => { $('#cktN').textContent = `(เลือกแล้ว ${[...$$('#cktMs input:checked')].length} เครื่อง)`; };
+  draw(); cnt();
+  $('#cktAdd').onclick = () => { sync(); items.push({ t: '', k: 'ok' }); draw(); [...$$('.ckt-t')].pop().focus(); };
+  $('#cktMs').onchange = cnt;
+  $('#cktQ').oninput = e => { const k = e.target.value.trim().toLowerCase(); $$('#cktMs label').forEach(l => l.hidden = !!k && !l.dataset.q.includes(k)); };
+  $('#cktSave').onclick = async () => {
+    sync();
+    const name = $('#cktName').value.trim(), its = items.filter(i => (i.t || '').trim()).map(i => i.k === 'num' ? { t: i.t.trim(), k: 'num', u: (i.u || '').trim(), min: i.min ?? null, max: i.max ?? null } : { t: i.t.trim(), k: 'ok' });
+    if (!name) return toast('ใส่ชื่อแบบฟอร์ม'); if (!its.length) return toast('ใส่หัวข้ออย่างน้อย 1 ข้อ');
+    const bad = its.find(i => i.k === 'num' && i.min != null && i.max != null && i.min > i.max); if (bad) return toast(`“${bad.t}”: ค่าต่ำสุดมากกว่าค่าสูงสุด`);
+    const tid = id || 'tpl-' + Date.now().toString(36), chosen = new Set([...$$('#cktMs input:checked')].map(c => c.value));
+    $('#cktSave').disabled = true;
+    try {
+      const { error } = await sb.from('checklist_templates').upsert({ id: tid, name, items: its }); if (error) throw error;
+      for (const m of D.machines) {
+        const want = chosen.has(m.machine_no) ? tid : (m.checklist_template === tid ? null : undefined);
+        if (want === undefined || want === m.checklist_template) continue;
+        const r = await sb.from('machines').update({ checklist_template: want }).eq('machine_no', m.machine_no); if (r.error) throw r.error;
+      }
+      closeModal(); toast('บันทึกแบบฟอร์มแล้ว · ใช้กับ ' + chosen.size + ' เครื่อง'); reload();
+    } catch (e) { $('#cktSave').disabled = false; fail(e); }
+  };
+  $('#cktDel') && ($('#cktDel').onclick = async e => {
+    const b = e.currentTarget; if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ? (เครื่องที่ใช้อยู่จะไม่มีแบบฟอร์ม)'; return; }
+    try {
+      for (const m of D.machines.filter(x => x.checklist_template === id)) { const r = await sb.from('machines').update({ checklist_template: null }).eq('machine_no', m.machine_no); if (r.error) throw r.error; }
+      const { error } = await sb.from('checklist_templates').delete().eq('id', id); if (error) throw error;
+      closeModal(); toast('ลบแบบฟอร์มแล้ว'); reload();
+    } catch (x) { fail(x); }
+  });
+}
+// หน้าหลักของผู้ใช้เครื่อง: สแกน QR หรือเลือกเครื่องจากรายการ
+function opHome() {
+  const ms = ckMachines().sort((a, b) => (!!ckToday(a.machine_no)) - (!!ckToday(b.machine_no)) || a.machine_no.localeCompare(b.machine_no));
+  const done = ms.filter(m => ckToday(m.machine_no)).length, mine = (D.ckRuns || []).filter(r => r.actor === S.me.email && r.run_date === todayIso()).length;
+  return `<div class="hello"><h1>สวัสดี, ${esc(String(S.me.full_name || S.me.email).split(' ')[0])}</h1><span class="sub">ผู้ใช้เครื่อง · วันนี้คุณตรวจแล้ว ${mine} เครื่อง</span></div>
+    <button class="ck-scan" data-scanqr>${IC.qr}<span><b>สแกน QR ที่เครื่อง</b><small>เพื่อตรวจก่อนใช้งานวันนี้</small></span></button>
+    <h3 class="sec">เครื่องที่ต้องตรวจวันนี้ <span class="sub">ตรวจแล้ว ${done} / ${ms.length}</span></h3>
+    ${ms.length ? `<div class="fbar"><label class="sr" for="ckq">ค้นหาเครื่อง</label><input id="ckq" class="search" placeholder="ค้นหาเครื่อง" value="${esc(S.ckq || '')}"></div>
+    <div class="ck-mlist">${ms.map(m => { const r = ckToday(m.machine_no); return `<button class="ck-m" data-q="${ckQ(m)}" ${r ? `data-ckview="${r.id}"` : `data-ck="${esc(m.machine_no)}"`}><span class="ck-mn"><b class="mono">${esc(m.machine_no)}</b> ${esc(m.machine_name || '')}<small>${esc(m.location || '')}${r ? ` · ${esc(nm(r.actor))} ${hhmm(r.created_at)} น.` : ''}</small></span>${ckStat(m)}</button>`; }).join('')}</div>` : '<div class="empty">ยังไม่มีเครื่องที่ต้องตรวจ · แจ้ง Admin ให้เลือกเครื่องในแบบฟอร์มตรวจ</div>'}`;
+}
+function opScan(m) {
+  const ph = (D.mphotos || []).filter(x => x.machine_no === m.machine_no).sort((a, b) => (b.is_main ? 1 : 0) - (a.is_main ? 1 : 0))[0];
+  return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name || '')}</h1></div>
+    ${ph ? `<div class="minfo-ph op-ph">${imgTag(ph.path, 'รูปเครื่อง ' + m.machine_no)}</div>` : ''}
+    <div class="mcard">${[['Location', m.location], ['Type', m.machine_type], ['Model', m.model]].filter(x => x[1]).map(([k, v]) => `<div><span>${k}</span>${esc(v)}</div>`).join('')}</div>
+    ${ckOf(m) && m.status !== 'Inactive' ? ckCard(m) + `<h3 class="sec">ผลตรวจย้อนหลัง</h3>${ckHistory(m.machine_no)}` : '<div class="empty">เครื่องนี้ไม่ต้องตรวจก่อนใช้งานประจำวัน</div>'}`;
+}
+
 // เมนู ⋯ ของหน้า PM / CAL (ทุกมุมมอง): Export แผนรูปแบบเดิม + นำเข้าแผน
 const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<button class="mi" id="pfForm">แบบฟอร์มกรอกวันที่ PM / CAL (Excel)</button>' : '', isAdmin() ? '<label class="mi" for="mImport">นำเข้า Excel (แบบฟอร์มกรอกวันที่ / แผนเดิม)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
 /* ---------- PM / CAL Tag: สติกเกอร์ 7 × 4 ซม. ---------- */
@@ -1980,7 +2176,7 @@ function readBook(wb) {
   const g = (r, ...keys) => { for (const k of keys) if (r[k] != null && r[k] !== '' && r[k] !== '-') return r[k]; return null; };
   return { sheet, g };
 }
-const ROLE_IN = { 'member': 'member', 'foreman shift': 'foreman_shift', 'foreman day': 'foreman_day', 'manager': 'manager', 'admin': 'admin' };
+const ROLE_IN = { 'member': 'member', 'foreman shift': 'foreman_shift', 'foreman day': 'foreman_day', 'manager': 'manager', 'admin': 'admin', 'operator': 'operator', 'ผู้ใช้เครื่อง': 'operator' };
 const yes = v => /^(y|yes|ใช่|✓|true|1)$/i.test(String(v ?? '').trim());
 function parseUsers(rows, g) {
   const out = [], bad = [];
@@ -2638,6 +2834,13 @@ function bind() {
   live('q', 'q'); live('dq', 'docQ'); live('mq', 'mq'); live('pq', 'pq'); live('vq', 'vq');
   $$('#expReq').forEach(b => b.onclick = exportRequests);
   $$('[data-planx]').forEach(b => b.onclick = () => exportPlan(Number(b.dataset.planx)));
+  $$('[data-ck]').forEach(b => b.onclick = e => { e.preventDefault(); ckForm(b.dataset.ck); });
+  $$('[data-ckview]').forEach(b => b.onclick = e => { e.preventDefault(); ckView(b.dataset.ckview); });
+  $$('[data-cktpl]').forEach(b => b.onclick = () => ckTplEdit(b.dataset.cktpl));
+  $$('[data-ckx]').forEach(b => b.onclick = () => ckExport(Number(b.dataset.ckx)));
+  $('#ckNg') && ($('#ckNg').onchange = e => { S.ckNg = e.target.checked; render(); });
+  const ckF = () => { const k = (S.ckq || '').trim().toLowerCase(); $$('#main [data-q]').forEach(el => el.hidden = !!k && !el.dataset.q.includes(k)); };
+  $('#ckq') && ($('#ckq').oninput = e => { S.ckq = e.target.value; ckF(); }); ckF();
   $('#pfForm') && ($('#pfForm').onclick = exportForm);
   $('#mAdd') && ($('#mAdd').onclick = () => machineForm(null));
   $('#mImport') && ($('#mImport').onchange = e => { const f = e.target.files[0]; if (f) importExcel(f); e.target.value = ''; });
