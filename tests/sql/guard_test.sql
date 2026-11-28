@@ -75,7 +75,8 @@ update requests set status='po_vendor' where job_type='pmcal' and machine_no='T-
 select as_user('user01@scg.com');
 update requests set po_no='PO-CAL' where job_type='pmcal' and machine_no='T-01';
 select as_user('user21@scg.com');
-update requests set status='closed' where job_type='pmcal' and machine_no='T-01';
+select expect_fail($$update requests set status='closed' where job_type='pmcal' and machine_no='T-01'$$, 'CAL close without certificate');
+update requests set status='closed', attachments='[{"kind":"cert","name":"cert.pdf","path":"x/cert.pdf"}]' where job_type='pmcal' and machine_no='T-01';
 select machine_no, cal_last_date, pm_last_date from machines order by 1;
 -- RLS: member can't edit machines/users
 select expect_fail($$insert into app_users(email, role) values ('x@scg.com','admin')$$, 'member adds user');
