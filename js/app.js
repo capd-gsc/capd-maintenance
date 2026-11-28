@@ -128,6 +128,10 @@ const lowParts = () => D.parts.filter(x => x.active !== false && x.min_qty != nu
 const qty = v => Number(v || 0).toLocaleString(undefined, { maximumFractionDigits: 2 });
 const isFD = () => is('foreman_day', 'admin');
 const canCreate = () => is('member', 'foreman_shift', 'foreman_day', 'admin');
+const canReport = () => canCreate() || role() === 'operator';   // ผู้ใช้เครื่องแจ้งซ่อมได้ (ใบงานไปรอ Foreman อนุมัติ)
+// นอกเวลา Admin: 17:00–08:00 และเสาร์–อาทิตย์ (ตรงกับ public.night_now)
+const nightNow = () => { const d = new Date(), h = d.getHours(), w = d.getDay(); return h >= 17 || h < 8 || w === 0 || w === 6; };
+const canNightApprove = q => q.status === 'pending_fd' && q.job_type !== 'purchase' && q.urgency === 'Critical' && nightNow() && (role() === 'foreman_shift' || canFD(q.machine_no));
 const activeUsers = () => D.profiles.filter(p => p.active !== false);
 const usersBy = (...rs) => activeUsers().filter(p => rs.includes(p.role));
 const memoApprovers = () => activeUsers().filter(p => p.memo_approver);
@@ -149,7 +153,7 @@ function jobType(q) {
 /* ---------- who acts next ---------- */
 function owner(q) {
   switch (q.status) {
-    case 'pending_fd': case 'ext_repair': { const f = fdsFor(q.machine_no); return f.length ? { roles: [], emails: f } : { roles: ['foreman_day'], emails: [] }; }
+    case 'pending_fd': case 'ext_repair': { const f = fdsFor(q.machine_no), adm = q.status === 'ext_repair' && !q.external_ref ? ['admin'] : []; return f.length ? { roles: adm, emails: f } : { roles: ['foreman_day', ...adm], emails: [] }; }
     case 'returned': return { roles: [], emails: [q.reporter] };
     case 'wait_admin': return { roles: ['admin'], emails: [] };
     case 'quotation': case 'memo_rejected': return { roles: [], emails: [q.assignee] };
@@ -344,7 +348,7 @@ const CRUMBS = { map: 'แผนผังเครื่อง', checks: 'ตร
 const navOn = k => S.view === k || (['detail', 'flow'].includes(S.view) && k === 'list') || (S.view === 'approve' && k === 'home') || (['scan', 'vendors'].includes(S.view) && k === 'machine');
 function render() {
   if (!S.me) return renderLogin();
-  if (isOp() && !['home', 'scan', 'map'].includes(S.view)) S.view = 'home';
+  if (isOp() && !['home', 'scan', 'map', 'new', 'detail'].includes(S.view)) S.view = 'home';
   dirty = false; lastSync = Date.now();
   const nav = navItems(), more = nav.filter(([k]) => !['home', 'new', 'list', ...(isOp() ? ['map'] : [])].includes(k)), moreBadge = more.reduce((a, x) => a + (x[2] || 0), 0);
   const sub = S.view === 'detail' ? S.sel : S.view === 'scan' ? S.scanNo : esc(roleText(S.me));
@@ -506,7 +510,7 @@ const VIEWS = {
   },
 
   new() {
-    if (!canCreate()) return `<div class="h-row"><h1>แจ้งซ่อม</h1></div><div class="empty">บทบาท ${ROLES[role()]} ไม่ได้เปิดใบงาน (เปิดได้เฉพาะ Member, Foreman Shift, Foreman Day, Admin)</div>`;
+    if (!canReport()) return `<div class="h-row"><h1>แจ้งซ่อม</h1></div><div class="empty">บทบาท ${ROLES[role()]} ไม่ได้เปิดใบงาน (เปิดได้เฉพาะ Member, Foreman Shift, Foreman Day, Admin)</div>`;
     const ms = D.machines.filter(m => m.status !== 'Inactive');
     if (!ms.length) return `<div class="h-row"><h1>แจ้งซ่อม</h1></div><div class="empty">ยังไม่มีเครื่องจักรในระบบ</div>`;
     return `<div class="h-row"><h1>แจ้งซ่อม / เปิดใบงาน</h1><span class="sub">ผู้เปิด: ${esc(S.me.email)}</span></div>
@@ -515,16 +519,16 @@ const VIEWS = {
         <input id="nMachineQ" class="inp" type="search" placeholder="พิมพ์ค้นหา รหัส / ชื่อเครื่อง / Location" autocomplete="off" aria-label="ค้นหาเครื่องจักร" style="margin-bottom:6px">
         <select id="nMachine" class="inp" required><option value="">— เลือกจากทะเบียนเครื่องจักร —</option>${ms.map(m => `<option value="${esc(m.machine_no)}" ${m.machine_no === S.prefill ? 'selected' : ''}>${esc(m.machine_no)} · ${esc(m.machine_name)} (${esc(m.location || '-')})</option>`).join('')}</select></div>
       <div class="full" id="mInfo"></div>
-      <div class="field full"><label for="nSym">อาการที่พบ *</label><textarea id="nSym" class="inp" rows="3" required></textarea></div>
+      <div class="field full"><label for="nSym">อาการที่พบ *</label><textarea id="nSym" class="inp" rows="3" required>${esc(S.prefillSym || '')}</textarea></div>
       <div class="field full"><label for="nFirst">วิธีแก้ไขเบื้องต้นที่ทำไปแล้ว</label><textarea id="nFirst" class="inp" rows="2"></textarea></div>
       <div class="field"><span class="flabel">ความเร่งด่วน *</span><div class="urg">${OPT.prio.map((p, i) => `<label class="u-${p}" for="nUrg${i}"><input type="radio" name="nUrg" id="nUrg${i}" value="${p}" ${p === 'High' ? 'checked' : ''}>${p}</label>`).join('')}</div></div>
       <div class="field"><label for="nPhoto">รูปภาพ</label><input id="nPhoto" type="file" accept="image/*" multiple class="inp"></div>
       <div class="field"><span class="flabel">เครื่องหยุดหรือไม่</span><label><input type="checkbox" id="nDown"> เครื่องหยุดใช้งาน</label>
         <div id="nDownBox" hidden style="margin-top:6px"><label for="nDownAt" class="sub">หยุดตั้งแต่ (ใช้คำนวณ Downtime)</label><input id="nDownAt" class="inp" type="datetime-local" value="${localInput(Date.now())}"></div></div>
-      <div class="field full choice">
+      ${isOp() ? '<input type="radio" name="nMode" value="request" checked hidden><p class="sub full" style="margin:0">ใบงานจะส่งให้ Foreman อนุมัติ · ถ้าเร่งด่วนให้แจ้ง Foreman Shift ด้วย</p>' : `<div class="field full choice">
         <label><input type="radio" name="nMode" value="request" id="nModeReq" checked> <b>แก้ไขเองไม่ได้</b> · ส่งให้ Foreman Day อนุมัติซ่อม</label>
         <label><input type="radio" name="nMode" value="self" id="nModeSelf"> <b>แก้ไขเองได้แล้ว</b> · บันทึกวิธีแก้และปิดงานทันที</label>
-      </div>
+      </div>`}
       <div class="full" id="selfBox" hidden>${closeFields('sf', null)}</div>
       <div class="full btns"><button class="btn" type="submit" id="bSubmit">ส่งใบงาน</button><button class="btn ghost" type="button" data-nav="home">ยกเลิก</button></div>
     </form>`;
@@ -1202,13 +1206,22 @@ function vendorBox(no) {
   return `<h3 style="margin-top:14px">Vendor และราคา <span class="pill ${rows.length >= 3 ? 's-confirm' : 's-wait'}">${rows.length} ราย${rows.length < 3 ? ' · แนะนำอย่างน้อย 3 ราย' : ''}</span></h3>
     ${rows.length ? `<div class="tbl-wrap"><table><thead><tr><th>Vendor</th><th class="num">เสนอราคา</th><th class="num">ได้งาน</th><th class="num">ราคาล่าสุด</th><th class="num">ส่งของเฉลี่ย</th></tr></thead><tbody>${rows.map(([v, o]) => `<tr><td>${esc(v)}${v === sup ? ' <span class="sub">(Machine Master)</span>' : ''}</td><td class="num">${o.n}</td><td class="num">${o.won}</td><td class="num">${o.last ? num2(o.last.amount) + `<br><span class="sub">${esc(o.last.id)}</span>` : '-'}</td><td class="num">${o.leads.length ? Math.round(o.leads.reduce((a, b) => a + b, 0) / o.leads.length) + ' วัน' : '-'}</td></tr>`).join('')}</tbody></table></div>` : '<div class="sub">ยังไม่มีข้อมูล Vendor</div>'}`;
 }
+function sapLaterBox(q) {
+  if (!isAdmin() || q.job_type !== 'normal' || q.external_ref || !['ext_repair', 'closed'].includes(q.status)) return '';
+  return box(`Admin: ใส่เลขที่ ${q.repair_unit === 'FM' ? 'K2' : 'SAP'} ภายหลัง (ซ่อมด่วนนอกเวลา)`, `<div class="form"><div class="field"><label for="slRef">เลขที่ใบแจ้งงาน ${q.repair_unit === 'FM' ? 'K2' : 'SAP'} *</label><input id="slRef" class="inp"></div></div>
+    <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="admin_ref">บันทึกเลขที่</button></div>`);
+}
 function actions(q) {
-  if (!OPEN(q.status)) return '';
+  if (!OPEN(q.status)) return sapLaterBox(q);
   const me = S.me.email, mine = isMine(q) || isAdmin();
   const waitNote = () => `<div class="note">ขั้นตอนนี้รอ <b>${esc(ownerText(q))}</b></div>`;
+  const nightBox = () => box('ซ่อมด่วนนอกเวลา Admin (Critical)', `<p class="sub" style="margin-top:0">ส่งช่างซ่อมได้ทันที ไม่ต้องรอ Admin · Admin จะใส่เลขที่ SAP / K2 ภายหลังในเวลาทำงาน</p>
+      <div class="choice"><label><input type="radio" name="ntUnit" value="RMT" checked> <b>RMT</b> · แจ้ง SAP ภายหลัง</label><label><input type="radio" name="ntUnit" value="FM"> <b>FM</b> · แจ้ง K2 ภายหลัง</label></div>
+      <div class="form" style="margin-top:10px"><div class="field full"><label for="ntNote">ติดต่อช่าง / หมายเหตุ</label><input id="ntNote" class="inp" placeholder="เช่น โทรแจ้งช่าง RMT กะดึก คุณ…"></div></div>
+      <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="night_approve">อนุมัติซ่อมด่วน</button></div>`);
   switch (q.status) {
     case 'pending_fd':
-      if (!canFD(q.machine_no)) return waitNote();
+      if (!canFD(q.machine_no)) return canNightApprove(q) ? nightBox() : waitNote();
       if (q.job_type === 'purchase') return box('Foreman Day: อนุมัติคำขอซื้อ', `${itemsTable(q)}<div class="form" style="margin-top:10px">
           <div class="field"><label for="apAssignee">ผู้รับผิดชอบ (ขอใบเสนอราคา / MEMO / รับของ)</label><select id="apAssignee" class="inp">${userOpts([S.me, ...usersBy('member', 'foreman_day').filter(u => u.email !== me)], q.reporter === me || !activeUsers().some(u => u.email === q.reporter && ['member', 'foreman_day'].includes(u.role)) ? me : q.reporter)}</select></div>
           <div class="field"><label for="apNote">หมายเหตุ (ต้องกรอกถ้าไม่อนุมัติ)</label><input id="apNote" class="inp"></div></div>
@@ -1221,7 +1234,7 @@ function actions(q) {
           <div class="field"><label for="apAssignee">ผู้รับผิดชอบงาน Special</label><select id="apAssignee" class="inp">${userOpts([S.me, ...usersBy('member', 'foreman_day').filter(u => u.email !== me)], me)}</select><span class="hint">Foreman Day ทำเอง หรือมอบหมาย Member</span></div>
           <div class="field"><label for="apNote">หมายเหตุ (ต้องกรอกถ้าไม่อนุมัติ)</label><input id="apNote" class="inp"></div>
         </div>
-        <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="fd_approve">อนุมัติซ่อม</button><button class="btn bad" data-act="fd_reject">ไม่อนุมัติ · ส่งกลับ</button></div>`);
+        <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="fd_approve">อนุมัติซ่อม</button><button class="btn bad" data-act="fd_reject">ไม่อนุมัติ · ส่งกลับ</button></div>`) + (canNightApprove(q) ? nightBox() : '');
     case 'returned':
       if (!(q.reporter === me || isAdmin() || is('foreman_shift', 'foreman_day'))) return waitNote();
       return box('ใบงานถูกส่งกลับ: ลองแก้ไขอีกครั้ง', `<p class="sub" style="margin-top:0">เหตุผล: ${esc(q.return_note || '-')}</p>
@@ -1239,8 +1252,8 @@ function actions(q) {
         <div class="field"><label for="exFiles">ภาพถ่าย / หลักฐานการแจ้ง</label><input id="exFiles" class="inp" type="file" multiple></div></div>
         <div class="btns" style="margin-top:12px"><button class="btn ok" data-act="admin_report">บันทึกการแจ้งซ่อม</button></div>`);
     case 'ext_repair':
-      if (!canFD(q.machine_no)) return waitNote();
-      return box(`Foreman Day: สรุปผลการซ่อมของ ${esc(q.repair_unit)} แล้วปิดงาน`, closeFields('ex', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_ext">สรุปและปิดงาน</button></div>`);
+      if (!canFD(q.machine_no)) return sapLaterBox(q) || waitNote();
+      return sapLaterBox(q) + box(`Foreman Day: สรุปผลการซ่อมของ ${esc(q.repair_unit)} แล้วปิดงาน`, closeFields('ex', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_ext">สรุปและปิดงาน</button></div>`);
     case 'quotation': case 'memo_rejected':
       if (!(mine || is('foreman_day'))) return waitNote();
       return (q.job_type === 'pmcal' && !q.action_at ? box('เริ่มดำเนินการ PM/CAL', `<p class="sub" style="margin-top:0">กดเมื่อเริ่มขอใบเสนอราคาจาก Vendor แล้ว ระบบจะหยุดส่งอีเมลเตือน</p><div class="btns"><button class="btn warn" data-act="pm_action">เริ่มดำเนินการแล้ว</button></div>`) : '')
@@ -1719,6 +1732,14 @@ async function act(a) {
         else { patch = { status: 'wait_admin', job_type: 'normal', repair_unit: t }; log = `Foreman Day อนุมัติ · Normal ส่งซ่อม ${t} (${t === 'FM' ? 'K2' : 'SAP'})`; }
         Object.assign(patch, { return_note: null }); if (v('apNote')) log += ' · ' + v('apNote'); msg = 'อนุมัติแล้ว'; break;
       }
+      case 'night_approve': {
+        const t = document.querySelector('input[name=ntUnit]:checked').value;
+        patch = { status: 'ext_repair', job_type: 'normal', repair_unit: t, return_note: null };
+        log = `${ROLES[role()] || ''} อนุมัติซ่อมด่วนนอกเวลา · ส่ง ${t} · รอ Admin ใส่เลขที่ ${t === 'FM' ? 'K2' : 'SAP'} ภายหลัง` + (v('ntNote') ? ' · ' + v('ntNote') : ''); msg = 'อนุมัติซ่อมด่วนแล้ว'; break;
+      }
+      case 'admin_ref':
+        if (!v('slRef')) return toast('กรอกเลขที่ใบแจ้งงาน');
+        patch = { external_ref: v('slRef') }; log = `Admin ใส่เลขที่ ${q.repair_unit === 'FM' ? 'K2' : 'SAP'} ภายหลัง: ${v('slRef')}`; msg = 'บันทึกเลขที่แล้ว'; break;
       case 'fd_reject':
         if (!v('apNote')) return toast('กรอกหมายเหตุเหตุผลที่ไม่อนุมัติ');
         patch = { status: 'returned', return_note: v('apNote') }; log = 'Foreman Day ไม่อนุมัติ ส่งกลับ · ' + v('apNote'); msg = 'ส่งกลับแล้ว'; break;
@@ -1929,8 +1950,13 @@ function ckView(id) {
     <p class="sub" style="margin-top:0">${esc(m.machine_name || '')} · ${esc(r.template_name || '')} · โดย ${esc(nm(r.actor))} ${hhmm(r.created_at)} น. · ${r.ng_count ? `<b class="bad-t">NG ${r.ng_count} ข้อ</b>` : 'ปกติทุกข้อ'}</p>
     <ol class="ck-list ro">${(r.results || []).map(x => `<li class="ck-it ${x.ok ? 'is-ok' : 'is-ng'}"><div class="ck-q">${esc(x.t)}${x.note ? `<div class="sub bad-t">${esc(x.note)}</div>` : ''}</div><div class="ck-a"><b>${x.k === 'num' ? `${esc(String(x.v))} ${esc(x.u || '')}` : x.ok ? 'OK' : 'NG'}</b>${x.k === 'num' && !x.ok ? ' <span class="sub">นอกเกณฑ์</span>' : ''}</div></li>`).join('')}</ol>
     ${r.note ? `<p><b>หมายเหตุ:</b> ${esc(r.note)}</p>` : ''}
+    ${r.ng_count && canReport() && r.run_date === todayIso() ? `<div class="btns" style="margin:10px 0"><button class="btn" id="ckReport">${IC.new}<span>แจ้งซ่อมจากข้อ NG</span></button><span class="sub">กรอกเครื่องและอาการให้ แก้ไขได้ก่อนส่ง</span></div>` : ''}
     ${(r.photos || []).length ? `<div class="ck-phs">${r.photos.map(ph => imgTag(ph, 'รูปประกอบผลตรวจ')).join('')}</div>` : ''}
     ${isAdmin() ? `<div class="btns" style="margin-top:12px"><button class="btn ghost sm bad-t" id="ckDel">ลบผลตรวจนี้</button><span class="sub">ลบแล้วตรวจใหม่ได้ในวันเดียวกัน</span></div>` : ''}`, 'wide');
+  $('#ckReport') && ($('#ckReport').onclick = () => {
+    S.prefill = r.machine_no; S.prefillSym = 'ตรวจก่อนใช้งาน ' + dmy(r.run_date) + ' พบ NG: ' + r.results.filter(x => !x.ok).map(x => x.t + (x.k === 'num' ? ` (${x.v} ${x.u || ''})` : '') + (x.note ? ` — ${x.note}` : '')).join(' / ');
+    closeModal(); S.view = 'new'; render(); window.scrollTo(0, 0);
+  });
   $('#ckDel') && ($('#ckDel').onclick = async e => {
     const b = e.currentTarget; if (b.dataset.sure !== '1') { b.dataset.sure = '1'; b.textContent = 'ยืนยันลบ?'; return; }
     const { error } = await sb.from('checklist_runs').delete().eq('id', r.id); if (error) return fail(error);
@@ -2029,7 +2055,9 @@ function opHome() {
   const ms = ckMachines().sort((a, b) => (!!ckToday(a.machine_no)) - (!!ckToday(b.machine_no)) || a.machine_no.localeCompare(b.machine_no));
   const done = ms.filter(m => ckToday(m.machine_no)).length, mine = (D.ckRuns || []).filter(r => r.actor === S.me.email && r.run_date === todayIso()).length;
   return `<div class="hello"><h1>สวัสดี, ${esc(String(S.me.full_name || S.me.email).split(' ')[0])}</h1><span class="sub">ผู้ใช้เครื่อง · วันนี้คุณตรวจแล้ว ${mine} เครื่อง</span></div>
-    <button class="ck-scan" data-scanqr>${IC.qr}<span><b>สแกน QR ที่เครื่อง</b><small>เพื่อตรวจก่อนใช้งานวันนี้</small></span></button>
+    <button class="ck-scan" data-scanqr>${IC.qr}<span><b>สแกน QR ที่เครื่อง</b><small>เพื่อตรวจก่อนใช้งาน หรือแจ้งซ่อม</small></span></button>
+    <button class="btn ghost op-map" data-nav="new">${IC.new}<span>แจ้งซ่อม (เครื่องเสีย / ผิดปกติ)</span></button>
+    ${(() => { const mine = D.requests.filter(q => q.reporter === S.me.email).slice(0, 5); return mine.length ? `<h3 class="sec">แจ้งซ่อมของฉัน</h3><div class="ck-mlist">${mine.map(q => `<button class="ck-m" data-open="${esc(q.id)}"><span class="ck-mn"><b class="mono">${esc(q.id)}</b> ${esc(q.machine_no || '')}<small>${esc(String(q.symptom || '').slice(0, 60))}</small></span>${pill(q.status)}</button>`).join('')}</div>` : ''; })()}
     ${D.hasMap && D.plans.length ? `<button class="btn ghost op-map" data-nav="map">${IC.map}<span>ดูแผนผัง: เครื่องไหนยังไม่ได้ตรวจ</span></button>` : ''}
     <h3 class="sec">เครื่องที่ต้องตรวจวันนี้ <span class="sub">ตรวจแล้ว ${done} / ${ms.length}</span></h3>
     ${ms.length ? `<div class="fbar"><label class="sr" for="ckq">ค้นหาเครื่อง</label><input id="ckq" class="search" placeholder="ค้นหาเครื่อง" value="${esc(S.ckq || '')}"></div>
@@ -2037,7 +2065,7 @@ function opHome() {
 }
 function opScan(m) {
   const ph = (D.mphotos || []).filter(x => x.machine_no === m.machine_no).sort((a, b) => (b.is_main ? 1 : 0) - (a.is_main ? 1 : 0))[0];
-  return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name || '')}</h1></div>
+  return `<div class="h-row"><h1>${esc(m.machine_no)} · ${esc(m.machine_name || '')}</h1><span class="sp"></span><button class="btn ghost" data-newfor="${esc(m.machine_no)}">${IC.new}<span>แจ้งซ่อมเครื่องนี้</span></button></div>
     ${ph ? `<div class="minfo-ph op-ph">${imgTag(ph.path, 'รูปเครื่อง ' + m.machine_no)}</div>` : ''}
     <div class="mcard">${[['Location', m.location], ['Type', m.machine_type], ['Model', m.model]].filter(x => x[1]).map(([k, v]) => `<div><span>${k}</span>${esc(v)}</div>`).join('')}</div>
     ${ckOf(m) && m.status !== 'Inactive' ? ckCard(m) + `<h3 class="sec">ผลตรวจย้อนหลัง</h3>${ckHistory(m.machine_no)}` : '<div class="empty">เครื่องนี้ไม่ต้องตรวจก่อนใช้งานประจำวัน</div>'}`;
@@ -3008,7 +3036,7 @@ function bind() {
         if (issues.length) { try { await issueParts(data.id, issues); } catch (e) { toast('ปิดงานแล้ว แต่เบิกอะไหล่ไม่สำเร็จ: ' + (e.message || e)); } }
         await addLog(data.id, self ? 'เปิดใบงานและแก้ไขเอง · ปิดงาน · ' + closed.fix_detail : 'เปิดใบงานแจ้งซ่อม ส่ง Foreman Day อนุมัติ');
         toast(data.id + (self ? ' บันทึกและปิดงานแล้ว' : ' ส่งแล้ว รอ Foreman Day อนุมัติ'));
-        await loadAll(); openDetail(data.id);
+        S.prefillSym = null; await loadAll(); openDetail(data.id);
       } catch (err) { $('#bSubmit').disabled = false; fail(err); }
     };
   }

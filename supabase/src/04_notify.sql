@@ -23,7 +23,7 @@ language sql stable security definer set search_path = public as $$
   with admins as (select coalesce(array_agg(email order by email), '{}') a from public.app_users where active and (role = 'admin' or is_admin))
   select array_remove(case q.status
     when 'pending_fd'    then public.fds_for(q.machine_no)
-    when 'ext_repair'    then public.fds_for(q.machine_no)
+    when 'ext_repair'    then public.fds_for(q.machine_no) || case when coalesce(q.external_ref, '') = '' then (select a from admins) else '{}'::text[] end
     when 'returned'      then array[q.reporter]
     when 'wait_admin'    then (select a from admins)
     when 'quotation'     then array[q.assignee]

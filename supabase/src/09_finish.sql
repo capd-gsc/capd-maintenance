@@ -35,7 +35,7 @@ declare
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where (schemaname = 'public' and tablename = any(tabs))
-              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload')) loop
+              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload','report photos upload')) loop
     execute format('alter policy %I on %I.%I to %s', p.policyname, p.schemaname, p.tablename, case when p_on then 'anon, authenticated' else 'authenticated' end);
   end loop;
   if p_on then

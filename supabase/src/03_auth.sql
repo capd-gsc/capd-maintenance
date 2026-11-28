@@ -92,6 +92,15 @@ language sql immutable as $$
   select public.only_changed(o, n, array['machine_no','symptom','first_fix','urgency','attachments','technician','machine_down','down_since'])
 $$;
 
+-- นอกเวลา Admin (ใช้กับการอนุมัติซ่อมด่วนของ Foreman Shift): 17:00–08:00 และเสาร์–อาทิตย์ ตามเวลาไทย
+create or replace function public.night_now() returns boolean
+language sql stable set search_path = public as $$
+  select extract(hour from (now() at time zone 'Asia/Bangkok')) >= 17
+      or extract(hour from (now() at time zone 'Asia/Bangkok')) < 8
+      or extract(isodow from (now() at time zone 'Asia/Bangkok')) in (6, 7)
+$$;
+grant execute on function public.night_now() to authenticated;
+
 create or replace function public.guard_request() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
@@ -104,8 +113,10 @@ declare
 begin
   if tg_op = 'INSERT' then
     if sys then return new; end if;                                   -- ใบงาน PM/CAL ที่ระบบเปิดเอง
-    if not public.cur_member() then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
+    if not (public.cur_member() or r = 'operator') then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
     if r = 'manager' and not adm then raise exception 'Manager ไม่ได้เปิดใบงาน'; end if;
+    -- ผู้ใช้เครื่องแจ้งซ่อมได้ ใบงานไปรอ Foreman อนุมัติเสมอ
+    if r = 'operator' and (new.status = 'closed' or new.job_type = 'purchase') then raise exception 'ผู้ใช้เครื่องแจ้งซ่อมได้ ใบงานจะส่งให้ Foreman อนุมัติ'; end if;
     new.reporter := me;
     if new.status = 'closed' then
       if new.job_type is distinct from 'self_fix' then raise exception 'ปิดงานทันทีได้เฉพาะงานแก้ไขเอง'; end if;
@@ -163,6 +174,10 @@ begin
 
   ok := case
     when old.status = 'pending_fd'    and new.status in ('wait_admin','quotation','returned') then public.can_fd(old.machine_no)
+    -- ซ่อมด่วนนอกเวลา Admin: Foreman Shift / Foreman Day อนุมัติ Critical ส่ง RMT/FM ได้เลย · Admin ใส่เลข SAP/K2 ภายหลัง
+    when old.status = 'pending_fd'    and new.status = 'ext_repair'
+         then (r = 'foreman_shift' or public.can_fd(old.machine_no)) and old.urgency = 'Critical' and public.night_now()
+              and new.job_type = 'normal' and new.repair_unit in ('RMT','FM') and coalesce(new.external_ref, '') = ''
     when old.status = 'returned'      and new.status in ('pending_fd','closed')       then me = old.reporter or adm or r in ('foreman_shift','foreman_day')
     when old.status = 'wait_admin'    and new.status = 'ext_repair'                   then adm
     when old.status = 'ext_repair'    and new.status = 'closed'                       then public.can_fd(old.machine_no)

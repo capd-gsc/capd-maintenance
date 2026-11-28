@@ -274,6 +274,15 @@ language sql immutable as $$
   select public.only_changed(o, n, array['machine_no','symptom','first_fix','urgency','attachments','technician','machine_down','down_since'])
 $$;
 
+-- นอกเวลา Admin (ใช้กับการอนุมัติซ่อมด่วนของ Foreman Shift): 17:00–08:00 และเสาร์–อาทิตย์ ตามเวลาไทย
+create or replace function public.night_now() returns boolean
+language sql stable set search_path = public as $$
+  select extract(hour from (now() at time zone 'Asia/Bangkok')) >= 17
+      or extract(hour from (now() at time zone 'Asia/Bangkok')) < 8
+      or extract(isodow from (now() at time zone 'Asia/Bangkok')) in (6, 7)
+$$;
+grant execute on function public.night_now() to authenticated;
+
 create or replace function public.guard_request() returns trigger
 language plpgsql security definer set search_path = public as $$
 declare
@@ -286,8 +295,10 @@ declare
 begin
   if tg_op = 'INSERT' then
     if sys then return new; end if;                                   -- ใบงาน PM/CAL ที่ระบบเปิดเอง
-    if not public.cur_member() then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
+    if not (public.cur_member() or r = 'operator') then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
     if r = 'manager' and not adm then raise exception 'Manager ไม่ได้เปิดใบงาน'; end if;
+    -- ผู้ใช้เครื่องแจ้งซ่อมได้ ใบงานไปรอ Foreman อนุมัติเสมอ
+    if r = 'operator' and (new.status = 'closed' or new.job_type = 'purchase') then raise exception 'ผู้ใช้เครื่องแจ้งซ่อมได้ ใบงานจะส่งให้ Foreman อนุมัติ'; end if;
     new.reporter := me;
     if new.status = 'closed' then
       if new.job_type is distinct from 'self_fix' then raise exception 'ปิดงานทันทีได้เฉพาะงานแก้ไขเอง'; end if;
@@ -345,6 +356,10 @@ begin
 
   ok := case
     when old.status = 'pending_fd'    and new.status in ('wait_admin','quotation','returned') then public.can_fd(old.machine_no)
+    -- ซ่อมด่วนนอกเวลา Admin: Foreman Shift / Foreman Day อนุมัติ Critical ส่ง RMT/FM ได้เลย · Admin ใส่เลข SAP/K2 ภายหลัง
+    when old.status = 'pending_fd'    and new.status = 'ext_repair'
+         then (r = 'foreman_shift' or public.can_fd(old.machine_no)) and old.urgency = 'Critical' and public.night_now()
+              and new.job_type = 'normal' and new.repair_unit in ('RMT','FM') and coalesce(new.external_ref, '') = ''
     when old.status = 'returned'      and new.status in ('pending_fd','closed')       then me = old.reporter or adm or r in ('foreman_shift','foreman_day')
     when old.status = 'wait_admin'    and new.status = 'ext_repair'                   then adm
     when old.status = 'ext_repair'    and new.status = 'closed'                       then public.can_fd(old.machine_no)
@@ -561,7 +576,7 @@ language sql stable security definer set search_path = public as $$
   with admins as (select coalesce(array_agg(email order by email), '{}') a from public.app_users where active and (role = 'admin' or is_admin))
   select array_remove(case q.status
     when 'pending_fd'    then public.fds_for(q.machine_no)
-    when 'ext_repair'    then public.fds_for(q.machine_no)
+    when 'ext_repair'    then public.fds_for(q.machine_no) || case when coalesce(q.external_ref, '') = '' then (select a from admins) else '{}'::text[] end
     when 'returned'      then array[q.reporter]
     when 'wait_admin'    then (select a from admins)
     when 'quotation'     then array[q.assignee]
@@ -880,6 +895,21 @@ drop policy if exists mphoto_read_op on public.machine_photos;
 create policy users_read_op    on public.app_users for select to authenticated using (public.cur_any());
 create policy machines_read_op on public.machines for select to authenticated using (public.cur_any());
 create policy mphoto_read_op   on public.machine_photos for select to authenticated using (public.cur_any());
+-- ผู้ใช้เครื่องแจ้งซ่อมได้ และเห็นเฉพาะใบงานที่ตัวเองแจ้ง (ขั้นตอนอื่นตรวจใน guard_request)
+drop policy if exists requests_read_own on public.requests;
+drop policy if exists requests_insert_op on public.requests;
+drop policy if exists logs_read_own on public.request_logs;
+drop policy if exists logs_insert_op on public.request_logs;
+create policy requests_read_own  on public.requests for select to authenticated using (public.cur_any() and reporter = public.my_email());
+create policy requests_insert_op on public.requests for insert to authenticated with check (public.cur_any());
+create policy logs_read_own  on public.request_logs for select to authenticated
+  using (public.cur_any() and exists (select 1 from public.requests q where q.id = request_id and q.reporter = public.my_email()));
+create policy logs_insert_op on public.request_logs for insert to authenticated
+  with check (public.cur_any() and actor = public.my_email() and exists (select 1 from public.requests q where q.id = request_id and q.reporter = public.my_email()));
+drop policy if exists "report photos upload" on storage.objects;
+create policy "report photos upload" on storage.objects for insert to authenticated
+  with check (bucket_id = 'request-photos' and public.cur_any() and name ~ '^[0-9a-f-]{36}/');
+
 -- รูปประกอบผลตรวจ (เก็บที่ checklists/…)
 drop policy if exists "checklist photos read" on storage.objects;
 drop policy if exists "checklist photos upload" on storage.objects;
@@ -996,7 +1026,7 @@ declare
 begin
   for p in select schemaname, tablename, policyname from pg_policies
            where (schemaname = 'public' and tablename = any(tabs))
-              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload')) loop
+              or (schemaname = 'storage' and tablename = 'objects' and policyname in ('photos read','photos upload','photos delete','docs read','docs write','docs delete','checklist photos read','checklist photos upload','plan images upload','report photos upload')) loop
     execute format('alter policy %I on %I.%I to %s', p.policyname, p.schemaname, p.tablename, case when p_on then 'anon, authenticated' else 'authenticated' end);
   end loop;
   if p_on then

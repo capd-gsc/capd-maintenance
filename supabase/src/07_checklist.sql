@@ -80,6 +80,21 @@ drop policy if exists mphoto_read_op on public.machine_photos;
 create policy users_read_op    on public.app_users for select to authenticated using (public.cur_any());
 create policy machines_read_op on public.machines for select to authenticated using (public.cur_any());
 create policy mphoto_read_op   on public.machine_photos for select to authenticated using (public.cur_any());
+-- ผู้ใช้เครื่องแจ้งซ่อมได้ และเห็นเฉพาะใบงานที่ตัวเองแจ้ง (ขั้นตอนอื่นตรวจใน guard_request)
+drop policy if exists requests_read_own on public.requests;
+drop policy if exists requests_insert_op on public.requests;
+drop policy if exists logs_read_own on public.request_logs;
+drop policy if exists logs_insert_op on public.request_logs;
+create policy requests_read_own  on public.requests for select to authenticated using (public.cur_any() and reporter = public.my_email());
+create policy requests_insert_op on public.requests for insert to authenticated with check (public.cur_any());
+create policy logs_read_own  on public.request_logs for select to authenticated
+  using (public.cur_any() and exists (select 1 from public.requests q where q.id = request_id and q.reporter = public.my_email()));
+create policy logs_insert_op on public.request_logs for insert to authenticated
+  with check (public.cur_any() and actor = public.my_email() and exists (select 1 from public.requests q where q.id = request_id and q.reporter = public.my_email()));
+drop policy if exists "report photos upload" on storage.objects;
+create policy "report photos upload" on storage.objects for insert to authenticated
+  with check (bucket_id = 'request-photos' and public.cur_any() and name ~ '^[0-9a-f-]{36}/');
+
 -- รูปประกอบผลตรวจ (เก็บที่ checklists/…)
 drop policy if exists "checklist photos read" on storage.objects;
 drop policy if exists "checklist photos upload" on storage.objects;

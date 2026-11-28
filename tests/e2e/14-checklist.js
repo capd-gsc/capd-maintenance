@@ -22,8 +22,8 @@ ok((await one("select count(*)::int n from checklist_templates where id in ('gen
 let r=await Q('update','checklist_templates',{name:'x'},[['id','general']],member);ok(!!r.error||r._noop||(await one("select name from checklist_templates where id='general'")).name!=='x','member cannot edit forms');
 r=await Q('update','machines',{checklist_template:'general'},[['machine_no',machine]],admin);ok(!r.error&&(await one('select checklist_template from machines where machine_no=$1',[machine])).checklist_template==='general','admin assigns a form to a machine');
 // --- operator is not a maintenance user ---
-r=await Q('insert','requests',{machine_no:machine,symptom:'x',status:'pending_fd'},[],OP);ok(!!r.error,'operator cannot open a job');
-r=await Q('select','requests',null,[],OP);ok(!r.error&&r.data.length===0,'operator sees no jobs');
+r=await Q('select','requests',null,[],OP);ok(!r.error&&r.data.length===0,'operator sees no one else’s jobs');
+r=await Q('update','requests',{status:'closed'},[],OP);ok(!r.error&&(r._noop||!(r.data||[]).length),'operator cannot move any job forward');
 r=await Q('select','spare_parts',null,[],OP);ok(!r.error&&r.data.length===0,'operator sees no parts');
 r=await Q('select','machines',null,[],OP);ok(!r.error&&r.data.length>0,'operator can read machines');
 // --- checklist run rules ---
@@ -61,6 +61,25 @@ ok(!r.error&&pj&&pj.job_type==='pmcal'&&pj.status==='quotation'&&pj.assignee===p
 ok((await one("select count(*)::int n from request_logs where request_id=$1 and actor=$2",[r.data,pmM.responsibility])).n===1,'manual open is logged with who did it');
 r=await R('open_pmcal_job',{p_machine:pmM.machine_no,p_kind:'PM'},admin);ok(r.data===pj.id,'opening again returns the same job');
 r=await R('set_pmcal_auto',{p_on:true},admin);ok((await R('pmcal_auto_on',{},member)).data===true,'admin switches auto-open back on');
+
+// --- operator reports a breakdown; Foreman Shift approves Critical out of hours ---
+r=await Q('insert','requests',{machine_no:machine,symptom:'ใบมีดบิ่น',urgency:'Critical',status:'closed',job_type:'self_fix'},[],OP);ok(!!r.error,'operator cannot close a job on the spot');
+r=await Q('insert','requests',{machine_no:machine,symptom:'ใบมีดบิ่น',urgency:'Critical'},[],OP,{ret:true,single:true});
+const OJ=r.data&&r.data.id;let oj=OJ&&await one('select * from requests where id=$1',[OJ]);
+ok(!r.error&&oj&&oj.status==='pending_fd'&&oj.reporter===OP,'operator reports a breakdown → waits for Foreman');
+r=await Q('select','requests',null,[],OP);ok(!r.error&&r.data.length>0&&r.data.every(x=>x.reporter===OP),'operator sees only own reports');
+const FS=(await one("select email from app_users where active and role='foreman_shift' and not is_admin order by email limit 1")).email;
+const setNight=v=>db.query(`create or replace function public.night_now() returns boolean language sql stable as $$ select ${v} $$`);
+await setNight('false');
+r=await Q('update','requests',{status:'ext_repair',job_type:'normal',repair_unit:'RMT'},[['id',OJ]],FS);ok((await one('select status from requests where id=$1',[OJ])).status==='pending_fd','Foreman Shift cannot fast-track during office hours');
+await setNight('true');
+const NJ=(await Q('insert','requests',{machine_no:machine,symptom:'ไม่ด่วน',urgency:'High'},[],member,{ret:true,single:true})).data.id;
+r=await Q('update','requests',{status:'ext_repair',job_type:'normal',repair_unit:'RMT'},[['id',NJ]],FS);ok((await one('select status from requests where id=$1',[NJ])).status==='pending_fd','Foreman Shift cannot fast-track a non-Critical job');
+r=await Q('update','requests',{status:'ext_repair',job_type:'normal',repair_unit:'RMT'},[['id',OJ]],FS);oj=await one('select * from requests where id=$1',[OJ]);
+ok(oj.status==='ext_repair'&&oj.approved_by===FS&&!oj.external_ref,'night: Foreman Shift approves Critical straight to repair');
+ok((await one('select public.next_actors(q) a from requests q where id=$1',[OJ])).a.includes(admin),'admin is asked to add the SAP/K2 number later');
+r=await Q('update','requests',{external_ref:'SAP-777'},[['id',OJ]],admin);ok((await one('select external_ref from requests where id=$1',[OJ])).external_ref==='SAP-777','admin adds the SAP number afterwards');
+await db.query(`create or replace function public.night_now() returns boolean language sql stable set search_path = public as $$ select extract(hour from (now() at time zone 'Asia/Bangkok')) >= 17 or extract(hour from (now() at time zone 'Asia/Bangkok')) < 8 or extract(isodow from (now() at time zone 'Asia/Bangkok')) in (6, 7) $$`);
 
 // --- UI: operator checks a machine ---
 await p.goto(env.url);await W(400);
