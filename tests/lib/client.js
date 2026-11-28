@@ -22,7 +22,7 @@ const auth={
   async signOut(){localStorage.removeItem(KEY);subs.forEach(c=>c('SIGNED_OUT',null));return {error:null}}
 };
 window.__login=email=>{const s={user:{email}};localStorage.setItem(KEY,JSON.stringify(s));subs.forEach(c=>c('SIGNED_IN',s));};
-window.supabase={createClient:(u,k,o)=>(HDR=Object.fromEntries(Object.entries(o?.global?.headers||{}).map(([a,b])=>[a.toLowerCase(),b])),{from:t=>new Q(t),auth,rpc:n=>call({op:'rpc',t:n}),
+window.supabase={createClient:(u,k,o)=>(HDR=Object.fromEntries(Object.entries(o?.global?.headers||{}).map(([a,b])=>[a.toLowerCase(),b])),{from:t=>new Q(t),auth,rpc:(n,a)=>call({op:'rpc',t:n,args:a||{}}),
  storage:{from:()=>({upload:async()=>({error:null}),createSignedUrls:async p=>({data:p.map(x=>({signedUrl:'data:text/plain,'+encodeURIComponent(x)}))}),createSignedUrl:async()=>({data:{signedUrl:'about:blank'}}),remove:async()=>({})})},
  channel:()=>({on(){return this},subscribe(){return this}}),removeChannel(){}})};
 })();

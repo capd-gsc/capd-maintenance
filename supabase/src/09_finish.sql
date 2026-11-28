@@ -46,10 +46,12 @@ begin
     grant select, insert, update, delete on public.floor_plans to anon;
     grant usage, select on all sequences in schema public to anon;
     grant execute on function public.ensure_pmcal_jobs() to anon;
+    grant execute on function public.pmcal_auto_on(), public.set_pmcal_auto(boolean), public.open_pmcal_job(text, text) to anon;
   else
     revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs, public.floor_plans from anon;
     revoke usage, select on all sequences in schema public from anon;
     revoke execute on function public.ensure_pmcal_jobs() from anon;
+    revoke execute on function public.pmcal_auto_on(), public.set_pmcal_auto(boolean), public.open_pmcal_job(text, text) from anon;
   end if;
   revoke select on public.pmcal_reminders from anon;
   return case when p_on then 'โหมดทดลอง: เปิด' else 'โหมดทดลอง: ปิด (ต้อง Login Microsoft 365)' end;

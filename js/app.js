@@ -179,6 +179,7 @@ async function loadAll() {
   const mp = await sb.from('machine_photos').select('*').order('created_at'); D.mphotos = mp.error ? [] : mp.data; D.hasMPhotos = !mp.error;
   // ตรวจก่อนใช้งานประจำวัน: แบบฟอร์ม + ผลตรวจ 60 วันล่าสุด
   const ct = await sb.from('checklist_templates').select('*').order('name'); D.hasChecklist = !ct.error; D.ckTpl = ct.error ? [] : ct.data;
+  try { const pa = await sb.rpc('pmcal_auto_on'); D.pmAuto = pa.error ? null : pa.data !== false; } catch (e) { D.pmAuto = null; }
   const fp = await sb.from('floor_plans').select('*').order('sort'); D.hasMap = !fp.error; D.plans = fp.error ? [] : fp.data;
   if (D.hasChecklist) { const d0 = new Date(); d0.setDate(d0.getDate() - 60); const cr = await sb.from('checklist_runs').select('*').gte('run_date', d0.toISOString().slice(0, 10)).order('created_at', { ascending: false }); D.ckRuns = cr.error ? [] : cr.data; } else D.ckRuns = [];
   // ประวัติทุกใบงาน (หน้า Flow / รายงาน) โหลดเมื่อเปิดหน้านั้นครั้งแรก แล้วรีเฟรชพร้อมข้อมูลอื่น
@@ -604,10 +605,10 @@ const VIEWS = {
     if (S.calView === 'week') return calWeek();
     const p = planList();
     const st = d => d < 0 ? `<span class="pill s-rej">เกินกำหนด ${-d} วัน</span>` : d <= 90 ? `<span class="pill s-wait">อีก ${d} วัน · ขั้น ${tierOf(d)}</span>` : `<span class="pill s-confirm">อีก ${d} วัน</span>`;
-    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span>${calMenu()}</div>
+    return `<div class="h-row"><h1>แผน PM / CAL</h1>${calToggle()}${D.pmAuto === false ? '<span class="pill s-wait" title="Admin ปิดไว้ · กดปุ่ม “เปิดใบงาน” ในแต่ละแถวเมื่อพร้อมเริ่มงาน">เปิดใบงานอัตโนมัติ: ปิด</span>' : '<span class="sub">ระบบเปิดใบงานอัตโนมัติเมื่อเหลือ 90 วัน และแจ้งเตือน 3 ขั้น</span>'}${calMenu()}</div>
     <div class="note" style="margin-bottom:14px">ขั้น 1 (≤ 3 เดือน): Member ผู้รับผิดชอบ · ขั้น 2 (≤ 2 เดือน): + Foreman Day · ขั้น 3 (≤ 1 เดือน): + Manager · เตือนทุกวันจนกว่า Member จะกด “เริ่มดำเนินการ” ในใบงาน</div>
     ${p.length ? `<div class="tbl-wrap"><table><thead><tr><th>Machine</th><th>ประเภท</th><th>ครั้งล่าสุด</th><th>Interval</th><th>ครบกำหนด</th><th>สถานะ</th><th>Member</th><th>ใบงาน</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>
-    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}<br><button class="btn ghost sm" data-tag="${esc(x.m.machine_no)}|${x.kind}" title="พิมพ์ Tag ${x.kind}">Tag</button></td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : '<span class="sub">-</span>'}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
+    ${p.map(x => `<tr><td><b class="mono">${esc(x.m.machine_no)}</b> ${esc(x.m.machine_name)}<br><span class="sub">${esc(x.m.location)}</span>${x.m.parent_machine ? ' · ' + parentTag(x.m) : ''}</td><td>${x.kind}<br><button class="btn ghost sm" data-tag="${esc(x.m.machine_no)}|${x.kind}" title="พิมพ์ Tag ${x.kind}">Tag</button></td><td class="num">${fd(x.last)}</td><td class="num">${x.iv} เดือน</td><td class="num">${fd(x.next)}</td><td>${st(x.days)}</td><td>${esc(nm(x.m.responsibility))}</td><td>${x.job ? `<a class="folio" href="#" data-open="${esc(x.job.id)}">${esc(x.job.id)}</a><br>${pill(x.job.status)}${x.job.action_at ? '' : '<br><span class="sub">ยังไม่เริ่มดำเนินการ</span>'}` : `<span class="sub">-</span>${canOpenPm(x.m) ? `<br><button class="btn ghost sm" data-pmopen="${esc(x.m.machine_no)}|${x.kind}">เปิดใบงาน</button>` : ''}`}</td>${isAdmin() ? `<td><button class="btn ghost sm" data-done="${esc(x.m.machine_no)}|${x.kind}" title="แก้วันที่ทำล่าสุดเป็นวันนี้">ทำแล้ววันนี้</button></td>` : ''}</tr>`).join('')}
     </tbody></table></div>` : '<div class="empty">ยังไม่มีแผน PM/CAL — ใส่วันที่ล่าสุดและ Interval ในหน้าเครื่องจักร</div>'}`;
   },
 
@@ -2136,7 +2137,37 @@ function bindMap() {
 }
 
 // เมนู ⋯ ของหน้า PM / CAL (ทุกมุมมอง): Export แผนรูปแบบเดิม + นำเข้าแผน
-const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() ? '<button class="mi" id="pfForm">แบบฟอร์มกรอกวันที่ PM / CAL (Excel)</button>' : '', isAdmin() ? '<label class="mi" for="mImport">นำเข้า Excel (แบบฟอร์มกรอกวันที่ / แผนเดิม)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
+const calMenu = () => { const y = new Date().getFullYear(); return moreMenu([`<button class="mi" data-planx="${y}">Export แผน ${y} (รูปแบบเดิม)</button>`, `<button class="mi" data-planx="${y + 1}">Export แผน ${y + 1} (รูปแบบเดิม)</button>`, isAdmin() && D.pmAuto != null ? `<button class="mi" id="pmAutoT">${D.pmAuto ? 'ปิดการเปิดใบงานอัตโนมัติ' : 'เปิดการเปิดใบงานอัตโนมัติ'}</button>` : '', isAdmin() ? '<button class="mi" id="pfForm">แบบฟอร์มกรอกวันที่ PM / CAL (Excel)</button>' : '', isAdmin() ? '<label class="mi" for="mImport">นำเข้า Excel (แบบฟอร์มกรอกวันที่ / แผนเดิม)</label><input id="mImport" type="file" accept=".xlsx,.xls" hidden>' : '']); };
+/* ---------- สวิตช์เปิดใบงาน PM / CAL อัตโนมัติ + เปิดใบงานเอง ---------- */
+const canOpenPm = m => D.pmAuto != null && (isAdmin() || role() === 'foreman_day' || m.responsibility === S.me.email);
+async function openPmJob(no, kind) {
+  try {
+    const { data, error } = await sb.rpc('open_pmcal_job', { p_machine: no, p_kind: kind }); if (error) throw error;
+    toast(`เปิดใบงาน ${kind} ${no} แล้ว`); await loadAll(); if (data) openDetail(data); else render();
+  } catch (e) { fail(e); }
+}
+function pmAutoToggle() {
+  const on = D.pmAuto, auto = D.requests.filter(q => q.job_type === 'pmcal' && q.reporter === 'system' && q.status === 'quotation' && !q.action_at && !(q.quotes || []).length);
+  modal(`<div class="h-row" style="margin:0 0 4px"><h2 style="margin:0;flex:1">${on ? 'ปิดการเปิดใบงาน PM / CAL อัตโนมัติ' : 'เปิดการเปิดใบงาน PM / CAL อัตโนมัติ'}</h2><button class="btn ghost" data-close>ยกเลิก</button></div>
+    ${on ? `<ul class="sub" style="padding-left:18px;line-height:1.7">
+      <li>ระบบจะไม่สร้างใบงาน PM / CAL เอง ทั้งตอนเปิดเว็บ นำเข้า Excel และสรุปตอน 08:00</li>
+      <li>หน้า PM / CAL ยังแสดงแผนและวันครบกำหนดตามเดิม · ผู้รับผิดชอบ / Foreman Day / Admin กด <b>เปิดใบงาน</b> ทีละแผนเมื่อพร้อม</li>
+      <li>การเตือน 3 ขั้น (90 / 60 / 30 วัน) และ “PM / CAL ที่ต้องเริ่มดำเนินการ” ในหน้าหลัก ทำงานเฉพาะแผนที่เปิดใบงานแล้ว</li></ul>
+      ${auto.length ? `<label class="pm-del"><input type="checkbox" id="pmDelAuto"> ลบใบงานที่ระบบเปิดไว้และยังไม่เริ่มดำเนินการ (${auto.length} ใบ)</label><p class="sub" style="margin:4px 0 0">${auto.slice(0, 8).map(q => esc(q.id + ' ' + q.machine_no + ' ' + q.pmcal_kind)).join(' · ')}${auto.length > 8 ? ' …' : ''}</p>` : ''}`
+      : '<p class="sub">ระบบจะเปิดใบงาน PM / CAL ให้เองเมื่อเหลือ 90 วันก่อนครบกำหนด และส่งแจ้งเตือน 3 ขั้น (เปิดใบงานที่ถึงเกณฑ์ให้ทันที)</p>'}
+    <div class="btns" style="margin-top:12px"><button class="btn" id="pmAutoGo">${on ? 'ปิดอัตโนมัติ' : 'เปิดอัตโนมัติ'}</button></div>`);
+  $('#pmAutoGo').onclick = async () => {
+    $('#pmAutoGo').disabled = true;
+    try {
+      const { error } = await sb.rpc('set_pmcal_auto', { p_on: !on }); if (error) throw error;
+      let del = 0;
+      if (on && $('#pmDelAuto')?.checked) for (const q of auto) { const r = await sb.from('requests').delete().eq('id', q.id); if (r.error) throw r.error; del++; }
+      let made = 0; if (!on) { const r = await sb.rpc('ensure_pmcal_jobs'); made = r.data || 0; }
+      closeModal(); toast(on ? `ปิดการเปิดใบงานอัตโนมัติแล้ว${del ? ` · ลบใบงาน ${del} ใบ` : ''}` : `เปิดอัตโนมัติแล้ว${made ? ` · เปิดใบงาน ${made} ใบ` : ''}`); reload();
+    } catch (e) { $('#pmAutoGo').disabled = false; fail(e); }
+  };
+}
+
 /* ---------- PM / CAL Tag: สติกเกอร์ 7 × 4 ซม. ---------- */
 const dmy = d => d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : '';
 const TAG_DOC = { PM: '', CAL: 'CP-F-064' };
@@ -2940,6 +2971,8 @@ function bind() {
   const ckF = () => { const k = (S.ckq || '').trim().toLowerCase(); $$('#main [data-q]').forEach(el => el.hidden = !!k && !el.dataset.q.includes(k)); };
   $('#ckq') && ($('#ckq').oninput = e => { S.ckq = e.target.value; ckF(); }); ckF();
   $('#pfForm') && ($('#pfForm').onclick = exportForm);
+  $('#pmAutoT') && ($('#pmAutoT').onclick = pmAutoToggle);
+  $$('[data-pmopen]').forEach(b => b.onclick = () => { const [no, kind] = b.dataset.pmopen.split('|'); b.disabled = true; openPmJob(no, kind); });
   $('#mAdd') && ($('#mAdd').onclick = () => machineForm(null));
   $('#mImport') && ($('#mImport').onchange = e => { const f = e.target.files[0]; if (f) importExcel(f); e.target.value = ''; });
   $('#dAdd') && ($('#dAdd').onclick = docForm);

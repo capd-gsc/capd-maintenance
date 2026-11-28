@@ -45,6 +45,23 @@ r=await Q('update','machines',{map_plan:'plan-x',map_x:0.5,map_y:0.25},[['machin
 r=await Q('update','machines',{map_x:2},[['machine_no',machine]],admin);ok(!!r.error,'pin position must be inside the plan (0–1)');
 await Q('delete','floor_plans',null,[['id','plan-x']],admin);ok((await one('select map_plan from machines where machine_no=$1',[machine])).map_plan===null,'deleting a plan clears its pins');
 
+// --- PM/CAL auto-open switch + opening one plan by hand ---
+const pmM=(await one("select machine_no, responsibility from machines where status<>'Inactive' and pm_last_date is not null and pm_interval_month>0 and responsibility is not null order by machine_no limit 1"));
+const R=(fn,args,e)=>q({op:'rpc',t:fn,args,f:[],order:[],email:'',headers:H(e)});
+r=await R('set_pmcal_auto',{p_on:false},member);ok(!!r.error,'member cannot switch auto-open');
+r=await R('set_pmcal_auto',{p_on:false},admin);ok(!r.error&&(await R('pmcal_auto_on',{},member)).data===false,'admin switches auto-open off');
+await db.query("update machines set pm_last_date=current_date - interval '11 months', pm_interval_month=12 where machine_no=$1",[pmM.machine_no]);
+await db.query("delete from requests where machine_no=$1 and job_type='pmcal'",[pmM.machine_no]);
+r=await R('ensure_pmcal_jobs',{},member);ok(r.data===0&&(await one("select count(*)::int n from requests where machine_no=$1 and job_type='pmcal'",[pmM.machine_no])).n===0,'switched off: no job is created automatically');
+const other=(await one("select email from app_users where active and role='member' and not is_admin and email<>$1 order by email limit 1",[pmM.responsibility])).email;
+r=await R('open_pmcal_job',{p_machine:pmM.machine_no,p_kind:'PM'},other);ok(!!r.error,'someone not responsible cannot open the job');
+r=await R('open_pmcal_job',{p_machine:pmM.machine_no,p_kind:'PM'},pmM.responsibility);
+let pj=r.data&&await one('select * from requests where id=$1',[r.data]);
+ok(!r.error&&pj&&pj.job_type==='pmcal'&&pj.status==='quotation'&&pj.assignee===pmM.responsibility,'responsible person opens the PM job by hand');
+ok((await one("select count(*)::int n from request_logs where request_id=$1 and actor=$2",[r.data,pmM.responsibility])).n===1,'manual open is logged with who did it');
+r=await R('open_pmcal_job',{p_machine:pmM.machine_no,p_kind:'PM'},admin);ok(r.data===pj.id,'opening again returns the same job');
+r=await R('set_pmcal_auto',{p_on:true},admin);ok((await R('pmcal_auto_on',{},member)).data===true,'admin switches auto-open back on');
+
 // --- UI: operator checks a machine ---
 await p.goto(env.url);await W(400);
 await p.fill('#trEmail',OP);await p.click('#fTrial button');await W(1000);

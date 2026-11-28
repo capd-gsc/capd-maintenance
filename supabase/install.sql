@@ -394,11 +394,57 @@ end $$;
 drop trigger if exists pmcal_done on public.requests;
 create trigger pmcal_done after update on public.requests for each row execute function public.pmcal_done();
 
--- เปิดใบงาน PM/CAL อัตโนมัติ (ทำงานในโหมดระบบ)
+-- สวิตช์เปิดใบงาน PM/CAL อัตโนมัติ (ค่าเริ่มต้น: เปิด · Admin ปิดได้ในหน้า PM / CAL)
+insert into public.app_settings(key, value) values ('pmcal_auto_jobs', 'on') on conflict (key) do nothing;
+create or replace function public.pmcal_auto_on() returns boolean
+language sql stable security definer set search_path = public as $$
+  select coalesce((select value <> 'off' from public.app_settings where key = 'pmcal_auto_jobs'), true)
+$$;
+create or replace function public.set_pmcal_auto(p_on boolean) returns boolean
+language plpgsql security definer set search_path = public as $$
+begin
+  if not public.cur_admin() then raise exception 'เปิด / ปิดได้เฉพาะ Admin'; end if;
+  insert into public.app_settings(key, value) values ('pmcal_auto_jobs', case when p_on then 'on' else 'off' end)
+  on conflict (key) do update set value = excluded.value;
+  return p_on;
+end $$;
+grant execute on function public.pmcal_auto_on() to authenticated;
+grant execute on function public.set_pmcal_auto(boolean) to authenticated;
+
+-- เปิดใบงาน PM/CAL ของแผนเดียว ตอนพร้อมเริ่มงาน (ผู้รับผิดชอบเครื่อง / Foreman Day / Admin)
+create or replace function public.open_pmcal_job(p_machine text, p_kind text) returns text
+language plpgsql security definer set search_path = public as $$
+declare m public.machines; last_d date; iv int; due date; jid text;
+begin
+  if not public.cur_member() then raise exception 'ไม่มีสิทธิ์ใช้งานระบบ'; end if;
+  select * into m from public.machines where machine_no = p_machine;
+  if not found or m.status = 'Inactive' then raise exception 'ไม่พบเครื่อง % หรือเครื่องยกเลิกใช้งาน', p_machine; end if;
+  if not (public.cur_admin() or public.cur_role() = 'foreman_day' or m.responsibility = public.my_email()) then
+    raise exception 'เปิดใบงานได้เฉพาะผู้รับผิดชอบเครื่อง Foreman Day หรือ Admin';
+  end if;
+  last_d := case p_kind when 'PM' then m.pm_last_date when 'CAL' then m.cal_last_date end;
+  iv := case p_kind when 'PM' then m.pm_interval_month when 'CAL' then m.cal_interval_month end;
+  if last_d is null or coalesce(iv, 0) <= 0 then raise exception 'เครื่อง % ยังไม่มีแผน %', p_machine, p_kind; end if;
+  due := (last_d + make_interval(months => iv))::date;
+  select id into jid from public.requests where machine_no = p_machine and job_type = 'pmcal' and pmcal_kind = p_kind and due_date = due;
+  if jid is not null then return jid; end if;
+  perform set_config('capd.system', '1', true);
+  insert into public.requests(machine_no, reporter, symptom, urgency, status, job_type, pmcal_kind, due_date, assignee, technician)
+  values (p_machine, 'system', p_kind || ' ตามแผน ครบกำหนด ' || to_char(due, 'DD/MM/YYYY'),
+          case when due - (now() at time zone 'Asia/Bangkok')::date <= 30 then 'High' else 'Normal' end, 'quotation', 'pmcal', p_kind, due, m.responsibility, m.responsibility)
+  returning id into jid;
+  perform set_config('capd.system', '', true);
+  insert into public.request_logs(request_id, action, actor) values (jid, 'เปิดใบงาน ' || p_kind || ' (กดเปิดเอง)', public.my_email());
+  return jid;
+end $$;
+grant execute on function public.open_pmcal_job(text, text) to authenticated;
+
+-- เปิดใบงาน PM/CAL อัตโนมัติ (ทำงานในโหมดระบบ) · ปิดสวิตช์แล้วไม่เปิดให้
 create or replace function public.ensure_pmcal_jobs() returns int
 language plpgsql security definer set search_path = public as $$
 declare n int := 0; r record; today date := (now() at time zone 'Asia/Bangkok')::date;
 begin
+  if not public.pmcal_auto_on() then return 0; end if;
   perform set_config('capd.system', '1', true);
   for r in
     select m.machine_no, m.responsibility, k.kind, (k.last_date + make_interval(months => k.iv))::date as due
@@ -961,10 +1007,12 @@ begin
     grant select, insert, update, delete on public.floor_plans to anon;
     grant usage, select on all sequences in schema public to anon;
     grant execute on function public.ensure_pmcal_jobs() to anon;
+    grant execute on function public.pmcal_auto_on(), public.set_pmcal_auto(boolean), public.open_pmcal_job(text, text) to anon;
   else
     revoke all on public.app_users, public.machines, public.requests, public.request_logs, public.documents, public.spare_parts, public.vendors, public.part_tx, public.machine_photos, public.checklist_templates, public.checklist_runs, public.floor_plans from anon;
     revoke usage, select on all sequences in schema public from anon;
     revoke execute on function public.ensure_pmcal_jobs() from anon;
+    revoke execute on function public.pmcal_auto_on(), public.set_pmcal_auto(boolean), public.open_pmcal_job(text, text) from anon;
   end if;
   revoke select on public.pmcal_reminders from anon;
   return case when p_on then 'โหมดทดลอง: เปิด' else 'โหมดทดลอง: ปิด (ต้อง Login Microsoft 365)' end;

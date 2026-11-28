@@ -12,7 +12,7 @@ module.exports=async function(){
       await c.query('set local role '+(b.email?'authenticated':'anon'));
       const vals=[];const where=b.f&&b.f.length?' where '+b.f.map(([k,v,o])=>{vals.push(String(v));if(o&&!['>=','<'].includes(o))throw new Error('bad op');return id(k)+'::text'+(o||'=')+'$'+vals.length}).join(' and '):'';
       let sql,rows;
-      if(b.op==='rpc'){rows=(await c.query('select public.'+id(b.t)+'() as v')).rows;await c.query('commit');return {data:rows[0].v,error:null}}
+      if(b.op==='rpc'){const ks=Object.keys(b.args||{});rows=(await c.query('select public.'+id(b.t)+'('+ks.map((k,i)=>id(k)+' => $'+(i+1)).join(',')+') as v',ks.map(k=>b.args[k]))).rows;await c.query('commit');return {data:rows[0].v,error:null}}
       const T='public.'+id(b.t);
       if(b.op==='select'){sql=`select * from ${T}${where}`+(b.order.length?' order by '+b.order.map(([k,a])=>id(k)+(a?' asc':' desc')).join(','):'');}
       else if(b.op==='delete'){sql=`delete from ${T}${where} returning *`;}
