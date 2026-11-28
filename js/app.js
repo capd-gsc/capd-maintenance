@@ -24,7 +24,7 @@ const ROLES = { member: 'Member', foreman_shift: 'Foreman Shift', foreman_day: '
 const SL = { pending_fd: 'รอ Foreman Day อนุมัติ', returned: 'ส่งกลับแก้ไข', wait_admin: 'รอ Admin แจ้งซ่อม', ext_repair: 'RMT/FM กำลังซ่อม', quotation: 'ขอใบเสนอราคา / MEMO', memo_approval: 'รอ Manager อนุมัติ MEMO', memo_rejected: 'MEMO ไม่อนุมัติ', po_vendor: 'ออก PO / นัด Vendor', closed: 'ปิดงาน', cancelled: 'ยกเลิก' };
 const SCLS = { pending_fd: 's-wait', returned: 's-rej', wait_admin: 's-queue', ext_repair: 's-work', quotation: 's-queue', memo_approval: 's-wait', memo_rejected: 's-rej', po_vendor: 's-test', closed: 's-done', cancelled: 's-done' };
 const STATUS_ORDER = ['pending_fd', 'returned', 'wait_admin', 'ext_repair', 'quotation', 'memo_approval', 'memo_rejected', 'po_vendor', 'closed', 'cancelled'];
-const ATT = { photo: 'รูปแจ้งซ่อม', external: 'หลักฐานแจ้ง SAP / K2', quotation: 'ใบเสนอราคา', memo: 'MEMO', po: 'PO', close: 'รูป / เอกสารหลังซ่อม' };
+const ATT = { photo: 'รูปแจ้งซ่อม', external: 'หลักฐานแจ้ง SAP / K2', quotation: 'ใบเสนอราคา', memo: 'MEMO', po: 'PO', close: 'รูป / เอกสารหลังซ่อม', cert: 'Certificate (CAL)' };
 const OPEN = s => s !== 'closed' && s !== 'cancelled';
 // พักงาน: ขั้นที่พักได้ และเหตุผล
 const HOLD_STATUSES = ['wait_admin', 'ext_repair', 'quotation', 'memo_rejected', 'po_vendor'];
@@ -1274,7 +1274,9 @@ function actions(q) {
         html += box('รับของเข้า', q.po_no ? receiveForm(q) : '<div class="note">รับของได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
       } else if (q.assignee === me || canFD(q.machine_no) || isAdmin()) {
         html += box('นัด Vendor เข้าดำเนินการ', `<div class="form"><div class="field"><label for="vdDate">วันนัด Vendor</label><input id="vdDate" class="inp" type="date" value="${esc(q.vendor_date || '')}"></div></div><div class="btns" style="margin-top:12px"><button class="btn" data-act="vendor_date">บันทึกวันนัด</button></div>`);
-        html += box('สรุปผลก่อนปิดงาน', q.po_no ? closeFields('pv', q) + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_special">สรุปและปิดงาน</button></div>` : '<div class="note">ปิดงานได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
+        const needCert = q.job_type === 'pmcal' && q.pmcal_kind === 'CAL', hasCert = (q.attachments || []).some(a => a.kind === 'cert');
+        const certField = needCert ? `<div class="field full cert-f"><label for="pvCert">ใบ Certificate การสอบเทียบ ${hasCert ? '(แนบไว้แล้ว · แนบเพิ่มได้)' : '*'}</label><input id="pvCert" class="inp" type="file" accept=".pdf,image/*" multiple><span class="hint">ไฟล์ PDF หรือรูปถ่ายใบ Certificate จาก Vendor · บังคับสำหรับงาน CAL</span></div>` : '';
+        html += box('สรุปผลก่อนปิดงาน', q.po_no ? closeFields('pv', q) + certField + `<div class="btns" style="margin-top:12px"><button class="btn ok" data-act="close_special">สรุปและปิดงาน</button></div>` : '<div class="note">ปิดงานได้หลังจาก Admin บันทึกเลขที่ PO แล้ว</div>');
       }
       return html || waitNote();
     }
@@ -1759,7 +1761,9 @@ async function act(a) {
       case 'close_ext': case 'close_special': {
         const pre = a === 'close_ext' ? 'ex' : 'pv';
         patch = readClose(pre); if (!patch) return;
-        patch.attachments = [...(q.attachments || []), ...await uploadFiles(q.id, 'close', filesOf(pre + 'Files'))];
+        const isCal = a === 'close_special' && q.job_type === 'pmcal' && q.pmcal_kind === 'CAL';
+        if (isCal && !filesOf('pvCert').length && !(q.attachments || []).some(x => x.kind === 'cert')) return toast('งาน CAL ต้องแนบใบ Certificate ก่อนปิดงาน');
+        patch.attachments = [...(q.attachments || []), ...await uploadFiles(q.id, 'close', filesOf(pre + 'Files')), ...(isCal ? await uploadFiles(q.id, 'cert', filesOf('pvCert')) : [])];
         log = 'สรุปผลและปิดงาน · ' + patch.fix_detail; msg = 'ปิดงานแล้ว';
         if (q.job_type === 'pmcal') log += ` · อัปเดต ${q.pmcal_kind} ล่าสุดของเครื่องอัตโนมัติ`;
         break;

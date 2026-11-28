@@ -354,6 +354,11 @@ begin
     return new;
   end if;
 
+  -- งาน CAL ต้องแนบใบ Certificate ก่อนปิดงาน (ทุกคน รวม Admin)
+  if old.status = 'po_vendor' and new.status = 'closed' and old.job_type = 'pmcal' and old.pmcal_kind = 'CAL'
+     and not exists (select 1 from jsonb_array_elements(coalesce(new.attachments, '[]'::jsonb)) x where x->>'kind' = 'cert') then
+    raise exception 'งาน CAL ต้องแนบใบ Certificate ก่อนปิดงาน';
+  end if;
   ok := case
     when old.status = 'pending_fd'    and new.status in ('wait_admin','quotation','returned') then public.can_fd(old.machine_no)
     -- ซ่อมด่วนนอกเวลา Admin: Foreman Shift / Foreman Day อนุมัติ Critical ส่ง RMT/FM ได้เลย · Admin ใส่เลข SAP/K2 ภายหลัง
@@ -368,6 +373,8 @@ begin
     -- ยกเลิกใบงาน (ต้องมีเหตุผล): Admin ทุกสถานะที่ยังเปิด · ผู้เปิดใบงานเฉพาะก่อน FD อนุมัติ
     when new.status = 'cancelled' and old.status not in ('closed','cancelled')     then coalesce(btrim(new.return_note), '') <> '' and (adm or (me = old.reporter and old.status in ('pending_fd','returned')))
     when old.status = 'po_vendor'     and new.status = 'closed'                       then (me = old.assignee or adm or public.can_fd(old.machine_no)) and coalesce(new.po_no, '') <> ''
+         and (old.job_type is distinct from 'pmcal' or old.pmcal_kind is distinct from 'CAL'
+              or exists (select 1 from jsonb_array_elements(coalesce(new.attachments, '[]'::jsonb)) x where x->>'kind' = 'cert'))
     else false end;
   if not ok then raise exception 'ไม่มีสิทธิ์เปลี่ยนสถานะจาก % เป็น %', old.status, new.status; end if;
 

@@ -81,6 +81,16 @@ ok((await one('select public.next_actors(q) a from requests q where id=$1',[OJ])
 r=await Q('update','requests',{external_ref:'SAP-777'},[['id',OJ]],admin);ok((await one('select external_ref from requests where id=$1',[OJ])).external_ref==='SAP-777','admin adds the SAP number afterwards');
 await db.query(`create or replace function public.night_now() returns boolean language sql stable set search_path = public as $$ select extract(hour from (now() at time zone 'Asia/Bangkok')) >= 17 or extract(hour from (now() at time zone 'Asia/Bangkok')) < 8 or extract(isodow from (now() at time zone 'Asia/Bangkok')) in (6, 7) $$`);
 
+// --- a CAL job cannot be closed without a certificate ---
+const calM=(await one("select machine_no from machines where status<>'Inactive' order by machine_no limit 1 offset 1")).machine_no;
+await db.query("update machines set cal_last_date=current_date - interval '11 months', cal_interval_month=12, responsibility=$2 where machine_no=$1",[calM,member]);
+const CJ=(await R('open_pmcal_job',{p_machine:calM,p_kind:'CAL'},admin)).data;
+await db.query('alter table requests disable trigger guard_request');await db.query("update requests set status='po_vendor', po_no='PO-CAL-1', vendor='V', quotation_amount=5000 where id=$1",[CJ]);await db.query('alter table requests enable trigger guard_request');
+r=await Q('update','requests',{status:'closed',fix_detail:'สอบเทียบแล้ว',attachments:[{kind:'close',name:'a.jpg',path:CJ+'/a.jpg'}]},[['id',CJ]],member);
+ok(!!r.error&&/Certificate/.test(r.error.message),'CAL job cannot close without a certificate');
+r=await Q('update','requests',{status:'closed',fix_detail:'สอบเทียบแล้ว',attachments:[{kind:'cert',name:'cert.pdf',path:CJ+'/cert.pdf'}]},[['id',CJ]],member);
+ok(!r.error&&(await one('select status from requests where id=$1',[CJ])).status==='closed','CAL job closes once the certificate is attached');
+
 // --- UI: operator checks a machine ---
 await p.goto(env.url);await W(400);
 await p.fill('#trEmail',OP);await p.click('#fTrial button');await W(1000);
